@@ -5,12 +5,6 @@
 
 [English](#english) · [简体中文](#简体中文)
 
-> [!IMPORTANT]
-> **Public preview:** this first commit intentionally contains only this README.
-> The source will be published after a final privacy, licensing, and
-> reproducibility review. The roadmap below distinguishes shipped functionality
-> from planned work.
-
 <a id="english"></a>
 
 ## English
@@ -105,25 +99,42 @@ The current contract is deliberately simple:
 Target durations are goals rather than guarantees. Natural speech, model
 behavior, and the configured timing tolerance determine the final duration.
 
-### Intended workflow
+### Quick start
 
-After the source release, the main workflow will remain an intentionally
-editable shell script:
+Use Python 3.11, install the OratorDeck dependencies, then prepare the pinned
+Voicebox backend:
 
 ```bash
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+
+scripts/setup-voicebox.sh
+# Follow the printed Voicebox backend installation command, then:
+ORATORDECK_TTS_GPU=0 scripts/run-voicebox.sh
+```
+
+See the full [installation guide](docs/installation.md), including creation of
+a Qwen CustomVoice profile.
+
+Copy the speaker-note template, add the matching slide images, and edit the
+intentionally transparent workflow script:
+
+```bash
+cp resources/SPEAKER_NOTES.example.md resources/SPEAKER_NOTES.md
 scripts/generate-keynote-workflow.sh
 ```
 
-Users will edit the input paths, voice profile, batch size, timing tolerance,
-GPU selection, and output name directly in that file. A run will produce a
-layout similar to:
+Users edit the input paths, voice profile, batch size, timing tolerance, GPU
+selection, and output name directly in that file. A run produces a layout
+similar to:
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
 ├── input/
 │   ├── SPEAKER_NOTES.md
 │   ├── SPEAKER_NOTES_CHUNKS.json
-│   └── SPEAKER_NOTES_TTS.txt
+│   ├── SPEAKER_NOTES_TTS.txt
+│   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
 │   ├── my-talk.timing.json
@@ -140,8 +151,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 └── workflow.log
 ```
 
-Generated media, model weights, caches, local environments, logs, and private
-presentation materials will be excluded from source control.
+Generated media, model weights, caches, the patched Voicebox checkout, local
+environments, logs, and private presentation materials are excluded from source
+control.
 
 ### Current scope and limitations
 
@@ -161,7 +173,7 @@ presentation materials will be excluded from source control.
 
 ### Roadmap
 
-- [ ] Publish the sanitized, reproducible source distribution.
+- [x] Publish the sanitized, reproducible source distribution.
 - [ ] Add a project-level configuration schema while keeping the workflow
   script easy to edit.
 - [ ] Package OratorDeck as an agent skill.
@@ -210,10 +222,9 @@ these upstream projects. Each dependency and model retains its own license.
 
 ### License
 
-This preview commit contains documentation only. The source release is planned
-under an open-source license, accompanied by the required notices and a clear
-accounting of upstream-derived code. The license file will be added together
-with the reviewed source rather than prematurely attached to unpublished code.
+OratorDeck is released under the [MIT License](LICENSE). The Voicebox patch
+retains the upstream MIT notice; runtime libraries and model weights remain
+under their own terms. See [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 ---
 
@@ -295,11 +306,26 @@ then build the evidence step by step.
 
 预期时长是目标而非绝对保证。最终时长还会受到自然语音、模型表现和允许误差的影响。
 
-### 预期使用方式
+### 快速开始
 
-源码发布后，主工作流仍会保留为一个适合用户直接编辑的 shell 脚本：
+使用 Python 3.11 安装 OratorDeck 依赖，并准备固定版本的 Voicebox 后端：
 
 ```bash
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install -r requirements.txt
+
+scripts/setup-voicebox.sh
+# 按输出提示安装 Voicebox 后端，然后运行：
+ORATORDECK_TTS_GPU=0 scripts/run-voicebox.sh
+```
+
+包括 Qwen CustomVoice profile 创建在内的完整步骤见
+[安装指南](docs/installation.md)。
+
+复制讲稿模板、加入匹配的幻灯片图片，再编辑并运行刻意保持透明的工作流脚本：
+
+```bash
+cp resources/SPEAKER_NOTES.example.md resources/SPEAKER_NOTES.md
 scripts/generate-keynote-workflow.sh
 ```
 
@@ -311,7 +337,8 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 ├── input/
 │   ├── SPEAKER_NOTES.md
 │   ├── SPEAKER_NOTES_CHUNKS.json
-│   └── SPEAKER_NOTES_TTS.txt
+│   ├── SPEAKER_NOTES_TTS.txt
+│   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
 │   ├── my-talk.timing.json
@@ -328,7 +355,8 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 └── workflow.log
 ```
 
-生成的媒体、模型权重、缓存、本地环境、日志和私有演示材料都不会进入源码版本控制。
+生成的媒体、模型权重、缓存、打过补丁的 Voicebox checkout、本地环境、日志和私有演示
+材料都不会进入源码版本控制。
 
 ### 当前范围与限制
 
@@ -342,7 +370,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 ### 路线图
 
-- [ ] 发布经过清理且可复现的源码。
+- [x] 发布经过清理且可复现的源码。
 - [ ] 增加项目级配置格式，同时保留容易直接编辑的工作流脚本。
 - [ ] 把 OratorDeck 封装为 agent skill。
 - [ ] 接收描述演示内容的结构化 LLM prompts。
@@ -382,6 +410,6 @@ OratorDeck 是独立项目，不代表上述上游项目，也未获得其官方
 
 ### 许可证
 
-本次预览提交只包含文档。源码发布时会一并提供明确的开源许可证、必要的第三方声明，
-以及对上游衍生代码的清楚说明。我们不会在尚未公开的代码上过早附加一份可能产生误解的
-许可证。
+OratorDeck 使用 [MIT License](LICENSE) 发布。Voicebox 补丁保留上游 MIT 声明；
+运行依赖和模型权重仍受其各自条款约束。详见
+[第三方声明](THIRD_PARTY_NOTICES.md)。

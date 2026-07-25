@@ -1,0 +1,43 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local models, caches, and temporary files
+models/
+.cache/
+.tmp/
+vendor/
+
+# Private presentation inputs
+resources/SPEAKER_NOTES.md
+resources/generated-images/*
+!resources/generated-images/.gitkeep
+
+# Generated runs and demo artifacts
+data/
+examples/demo/generated-images/*
+!examples/demo/generated-images/.gitkeep
+examples/demo/SPEAKER_NOTES_CHUNKS.json
+examples/demo/SPEAKER_NOTES_TTS.txt
+
+# Generated media and reports
+*.wav
+*.mp3
+*.flac
+*.mp4
+*.mkv
+*.timing.json
+*.raw.srt
+*.raw.vtt
+*.raw.lrc
+
+# Local configuration and editor files
+.env
+.env.*
+!.env.example
+.DS_Store
+.idea/
+.vscode/

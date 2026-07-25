@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install lightweight test dependencies
+        run: |
+          python -m pip install \
+            "pytest>=8,<10" \
+            "ruff>=0.12,<1" \
+            "numpy>=1.26,<2" \
+            "soundfile>=0.12,<1" \
+            "Pillow>=10,<13" \
+            "imageio-ffmpeg>=0.5,<1"
+
+      - name: Lint
+        run: python -m ruff check scripts tests
+
+      - name: Test
+        run: python -m pytest -q
+
+      - name: Check executable syntax
+        run: |
+          python -m compileall -q scripts tests
+          for script in scripts/*.sh; do
+            bash -n "$script"
+          done
+
+      - name: Validate synthetic input contract
+        run: |
+          python scripts/create-demo-slides.py
+          python scripts/format-speaker-notes-chunks.py \
+            examples/demo/SPEAKER_NOTES.md \
+            --output examples/demo/SPEAKER_NOTES_CHUNKS.json \
+            --tts-output examples/demo/SPEAKER_NOTES_TTS.txt
+          python scripts/generate-english-keynote.py \
+            examples/demo/SPEAKER_NOTES_CHUNKS.json \
+            --dry-run
+
+  voicebox-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pinned Voicebox patch
+        run: scripts/check-voicebox-patch.sh

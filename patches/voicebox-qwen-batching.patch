@@ -1,0 +1,713 @@
+diff --git a/backend/backends/qwen_custom_voice_backend.py b/backend/backends/qwen_custom_voice_backend.py
+index 74f739b..c392797 100644
+--- a/backend/backends/qwen_custom_voice_backend.py
++++ b/backend/backends/qwen_custom_voice_backend.py
+@@ -15,8 +15,9 @@ Languages supported: zh, en, ja, ko, de, fr, ru, pt, es, it
+ """
+ 
+ import asyncio
++import importlib.util
+ import logging
+-from typing import Optional
++from typing import Optional, Sequence
+ 
+ import numpy as np
+ import torch
+@@ -105,17 +106,38 @@ class QwenCustomVoiceBackend:
+             logger.info("Loading Qwen CustomVoice %s on %s...", model_size, self.device)
+ 
+             if self.device == "cpu":
+-                self.model = Qwen3TTSModel.from_pretrained(
+-                    model_path,
+-                    torch_dtype=torch.float32,
+-                    low_cpu_mem_usage=False,
+-                )
++                load_kwargs = {
++                    "dtype": torch.float32,
++                    "low_cpu_mem_usage": False,
++                }
+             else:
+-                self.model = Qwen3TTSModel.from_pretrained(
+-                    model_path,
+-                    device_map=self.device,
+-                    torch_dtype=torch.bfloat16,
++                load_kwargs = {
++                    "device_map": self.device,
++                    "dtype": torch.bfloat16,
++                }
++                if importlib.util.find_spec("flash_attn") is not None:
++                    # Ampere-class NVIDIA GPUs support FlashAttention 2.  Qwen
++                    # forwards this option directly to Transformers.
++                    load_kwargs["attn_implementation"] = "flash_attention_2"
++                    logger.info("Enabling FlashAttention 2 for Qwen CustomVoice")
++
++            try:
++                self.model = Qwen3TTSModel.from_pretrained(model_path, **load_kwargs)
++            except Exception as error:
++                # A mismatched flash-attn binary should not make TTS unusable.
++                # Retry without it, but do not hide unrelated model-load errors.
++                message = str(error).lower()
++                if (
++                    "attn_implementation" not in load_kwargs
++                    or ("flash" not in message and "attention" not in message and "attn" not in message)
++                ):
++                    raise
++                logger.warning(
++                    "FlashAttention 2 could not be enabled (%s); falling back to PyTorch attention",
++                    error,
+                 )
++                load_kwargs.pop("attn_implementation")
++                self.model = Qwen3TTSModel.from_pretrained(model_path, **load_kwargs)
+ 
+         self._current_model_size = model_size
+         self.model_size = model_size
+@@ -212,3 +234,58 @@ class QwenCustomVoiceBackend:
+ 
+         audio, sample_rate = await asyncio.to_thread(_generate_sync)
+         return audio, sample_rate
++
++    async def generate_batch(
++        self,
++        texts: Sequence[str],
++        voice_prompt: dict,
++        language: str = "en",
++        seed: Optional[int] = None,
++        instruct: Optional[str | Sequence[str]] = None,
++    ) -> tuple[list[np.ndarray], int]:
++        """Generate a same-voice Qwen CustomVoice batch in one GPU call.
++
++        Qwen's public ``generate_custom_voice`` API accepts a list of texts.
++        This avoids repeating decoder setup for adjacent long-form chunks while
++        keeping their output order unchanged. ``instruct`` may be one shared
++        prompt or one prompt per text. A caller that requires a unique
++        deterministic seed per chunk should use the single-item API instead.
++        """
++        if not texts:
++            return [], 0
++
++        await self.load_model_async(None)
++        speaker = voice_prompt.get("preset_voice_id") or QWEN_CV_DEFAULT_SPEAKER
++        text_batch = list(texts)
++        instruct_batch: str | list[str] | None
++        if instruct is None or isinstance(instruct, str):
++            instruct_batch = instruct
++        else:
++            instruct_batch = list(instruct)
++            if len(instruct_batch) != len(text_batch):
++                raise ValueError(
++                    f"Expected {len(text_batch)} instructions, got {len(instruct_batch)}"
++                )
++
++        def _generate_sync():
++            if seed is not None:
++                torch.manual_seed(seed)
++                if torch.cuda.is_available():
++                    torch.cuda.manual_seed(seed)
++
++            lang_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
++            kwargs = {
++                "text": text_batch,
++                "language": lang_name.capitalize() if lang_name != "auto" else "Auto",
++                "speaker": speaker,
++            }
++            if instruct_batch:
++                kwargs["instruct"] = instruct_batch
++            return self.model.generate_custom_voice(**kwargs)
++
++        wavs, sample_rate = await asyncio.to_thread(_generate_sync)
++        if len(wavs) != len(text_batch):
++            raise RuntimeError(
++                f"Qwen returned {len(wavs)} audio segments for a batch of {len(text_batch)} texts"
++            )
++        return [np.asarray(wav) for wav in wavs], sample_rate
+diff --git a/backend/models.py b/backend/models.py
+index 7970ce4..09be724 100644
+--- a/backend/models.py
++++ b/backend/models.py
+@@ -96,12 +96,46 @@ class GenerationRequest(BaseModel):
+     crossfade_ms: int = Field(
+         default=50, ge=0, le=500, description="Crossfade duration in ms between chunks (0 for hard cut)"
+     )
++    chunk_batch_size: int = Field(
++        default=4,
++        ge=1,
++        le=8,
++        description="Adjacent chunks per GPU batch when the selected engine supports batched inference (default: 4; safely bisects CUDA-OOM batches)",
++    )
+     normalize: bool = Field(default=True, description="Normalize output audio volume")
+     effects_chain: Optional[List["EffectConfig"]] = Field(
+         None, description="Effects chain to apply after generation (overrides profile default)"
+     )
+ 
+ 
++class AtomicGenerationChunk(BaseModel):
++    """One indivisible item in a batched Qwen synthesis request."""
++
++    id: str = Field(
++        ...,
++        min_length=1,
++        max_length=100,
++        pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
++    )
++    text: str = Field(..., min_length=1, max_length=5000)
++    instruct: Optional[str] = Field(None, max_length=500)
++
++
++class AtomicBatchGenerationRequest(BaseModel):
++    """A GPU batch whose returned WAVs retain the input item boundaries."""
++
++    profile_id: str
++    chunks: List[AtomicGenerationChunk] = Field(..., min_length=1, max_length=8)
++    language: str = Field(
++        default="en",
++        pattern="^(zh|en|ja|ko|de|fr|ru|pt|es|it)$",
++    )
++    seed: Optional[int] = Field(None, ge=0)
++    model_size: str = Field(default="1.7B", pattern="^(1\\.7B|0\\.6B)$")
++    engine: str = Field(default="qwen_custom_voice", pattern="^qwen_custom_voice$")
++    normalize: bool = Field(default=True)
++
++
+ class GenerationResponse(BaseModel):
+     """Response model for voice generation."""
+ 
+diff --git a/backend/routes/generations.py b/backend/routes/generations.py
+index 215c96c..2c09fd9 100644
+--- a/backend/routes/generations.py
++++ b/backend/routes/generations.py
+@@ -1,12 +1,16 @@
+ """TTS generation endpoints."""
+ 
+ import asyncio
++import io
++import json
+ import logging
++import re
+ import uuid
++import zipfile
+ from pathlib import Path
+ 
+ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+-from fastapi.responses import StreamingResponse
++from fastapi.responses import Response, StreamingResponse
+ from sqlalchemy.orm import Session
+ 
+ from .. import config, models
+@@ -26,6 +30,65 @@ IMPORT_AUDIO_EXTENSIONS = {".wav", ".mp3", ".flac", ".ogg", ".m4a", ".aac", ".we
+ IMPORT_AUDIO_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
+ 
+ 
++def _is_cuda_oom(error: RuntimeError) -> bool:
++    message = str(error).lower()
++    return "out of memory" in message and ("cuda" in message or "gpu" in message)
++
++
++async def _generate_atomic_batch_adaptive(
++    backend,
++    items: list[models.AtomicGenerationChunk],
++    voice_prompt: dict,
++    language: str,
++    seed: int | None,
++) -> tuple[list, int]:
++    """Generate complete items in order, bisecting only an OOM GPU batch."""
++    try:
++        return await backend.generate_batch(
++            [item.text for item in items],
++            voice_prompt,
++            language=language,
++            seed=seed,
++            instruct=[item.instruct or "" for item in items],
++        )
++    except RuntimeError as error:
++        if not _is_cuda_oom(error) or len(items) == 1:
++            raise
++        logger.warning(
++            "Atomic TTS batch of %d items exhausted GPU memory; retrying as two batches",
++            len(items),
++        )
++        try:
++            import torch
++
++            if torch.cuda.is_available():
++                torch.cuda.empty_cache()
++        except (ImportError, RuntimeError):
++            pass
++
++        midpoint = len(items) // 2
++        left_audio, left_rate = await _generate_atomic_batch_adaptive(
++            backend,
++            items[:midpoint],
++            voice_prompt,
++            language,
++            seed,
++        )
++        right_audio, right_rate = await _generate_atomic_batch_adaptive(
++            backend,
++            items[midpoint:],
++            voice_prompt,
++            language,
++            seed,
++        )
++        if left_rate != right_rate:
++            raise RuntimeError(
++                f"Atomic sub-batches returned different sample rates: "
++                f"{left_rate} and {right_rate}"
++            )
++        return left_audio + right_audio, left_rate
++
++
+ def _get_or_create_import_profile(db: Session) -> DBVoiceProfile:
+     """Singleton profile every imported audio clip points at — keeps the
+     Generation FK happy without making profile_id nullable across the schema."""
+@@ -139,6 +202,7 @@ async def generate_speech(
+             mode="generate",
+             max_chunk_chars=data.max_chunk_chars,
+             crossfade_ms=data.crossfade_ms,
++            chunk_batch_size=data.chunk_batch_size,
+         )
+     )
+ 
+@@ -361,6 +425,7 @@ async def stream_speech(
+         instruct=data.instruct,
+         max_chunk_chars=data.max_chunk_chars,
+         crossfade_ms=data.crossfade_ms,
++        batch_size=data.chunk_batch_size,
+         trim_fn=trim_fn,
+     )
+ 
+@@ -402,6 +467,103 @@ async def stream_speech(
+     )
+ 
+ 
++@router.post("/generate/atomic-batch")
++async def generate_atomic_batch(
++    data: models.AtomicBatchGenerationRequest,
++    db: Session = Depends(get_db),
++):
++    """Generate several complete slide texts in one GPU batch.
++
++    The ZIP response contains one WAV per request item. CUDA OOM recovery may
++    bisect the list internally, but it never splits an item's text.
++    """
++    from ..backends import (
++        ensure_model_cached_or_raise,
++        get_tts_backend_for_engine,
++        load_engine_model,
++    )
++
++    item_ids = [item.id for item in data.chunks]
++    if len(set(item_ids)) != len(item_ids):
++        raise HTTPException(status_code=400, detail="Atomic batch chunk ids must be unique")
++
++    profile = await profiles.get_profile(data.profile_id, db)
++    if not profile:
++        raise HTTPException(status_code=404, detail="Profile not found")
++    try:
++        profiles.validate_profile_engine(profile, data.engine)
++    except ValueError as error:
++        raise HTTPException(status_code=400, detail=str(error)) from error
++
++    await ensure_model_cached_or_raise(data.engine, data.model_size)
++    await load_engine_model(data.engine, data.model_size)
++    backend = get_tts_backend_for_engine(data.engine)
++    voice_prompt = await profiles.create_voice_prompt_for_profile(
++        data.profile_id,
++        db,
++        engine=data.engine,
++    )
++
++    audio_items, sample_rate = await _generate_atomic_batch_adaptive(
++        backend,
++        data.chunks,
++        voice_prompt,
++        data.language,
++        data.seed,
++    )
++    if len(audio_items) != len(data.chunks):
++        raise RuntimeError(
++            f"Atomic batch returned {len(audio_items)} WAVs for {len(data.chunks)} items"
++        )
++    if sample_rate <= 0:
++        raise RuntimeError(f"Atomic batch returned invalid sample rate {sample_rate}")
++
++    manifest_items = []
++    archive_buffer = io.BytesIO()
++    with zipfile.ZipFile(
++        archive_buffer,
++        mode="w",
++        compression=zipfile.ZIP_STORED,
++    ) as archive:
++        for index, (item, audio) in enumerate(zip(data.chunks, audio_items), start=1):
++            if len(audio) == 0:
++                raise RuntimeError(f"Atomic batch returned empty audio for {item.id}")
++            if data.normalize:
++                from ..utils.audio import normalize_audio
++
++                audio = normalize_audio(audio)
++            filename = f"{index:03d}-{re.sub(r'[^A-Za-z0-9._-]', '-', item.id)}.wav"
++            wav_bytes = tts.audio_to_wav_bytes(audio, sample_rate)
++            archive.writestr(filename, wav_bytes)
++            manifest_items.append(
++                {
++                    "id": item.id,
++                    "filename": filename,
++                    "duration_seconds": round(len(audio) / sample_rate, 6),
++                    "sample_rate": sample_rate,
++                }
++            )
++        archive.writestr(
++            "manifest.json",
++            json.dumps(
++                {
++                    "format": "voicebox.atomic-tts-batch.v1",
++                    "item_count": len(manifest_items),
++                    "items": manifest_items,
++                },
++                ensure_ascii=False,
++                indent=2,
++            )
++            + "\n",
++        )
++
++    return Response(
++        content=archive_buffer.getvalue(),
++        media_type="application/zip",
++        headers={"Content-Disposition": 'attachment; filename="atomic-speech.zip"'},
++    )
++
++
+ @router.post("/generate/import", response_model=models.GenerationResponse)
+ async def import_audio(
+     file: UploadFile = File(...),
+diff --git a/backend/services/generation.py b/backend/services/generation.py
+index ce8fe93..bb68d3c 100644
+--- a/backend/services/generation.py
++++ b/backend/services/generation.py
+@@ -41,6 +41,7 @@ async def run_generation(
+     mode: Literal["generate", "retry", "regenerate"],
+     max_chunk_chars: Optional[int] = None,
+     crossfade_ms: Optional[int] = None,
++    chunk_batch_size: Optional[int] = None,
+     version_id: Optional[str] = None,
+ ) -> None:
+     """Execute TTS inference and persist the result.
+@@ -83,6 +84,8 @@ async def run_generation(
+             gen_kwargs["max_chunk_chars"] = max_chunk_chars
+         if crossfade_ms is not None:
+             gen_kwargs["crossfade_ms"] = crossfade_ms
++        if chunk_batch_size is not None:
++            gen_kwargs["batch_size"] = chunk_batch_size
+ 
+         audio, sample_rate = await generate_chunked(tts_model, text, voice_prompt, **gen_kwargs)
+ 
+diff --git a/backend/tests/test_atomic_batch_tts.py b/backend/tests/test_atomic_batch_tts.py
+new file mode 100644
+index 0000000..de8e219
+--- /dev/null
++++ b/backend/tests/test_atomic_batch_tts.py
+@@ -0,0 +1,76 @@
++"""Regression tests for slide-atomic adaptive TTS batching."""
++
++import unittest
++
++import numpy as np
++
++from backend.models import AtomicGenerationChunk
++from backend.routes.generations import _generate_atomic_batch_adaptive
++
++
++class MemoryLimitedBackend:
++    def __init__(self):
++        self.calls = []
++
++    async def generate_batch(
++        self,
++        texts,
++        voice_prompt,
++        language,
++        seed,
++        instruct,
++    ):
++        self.calls.append((list(texts), list(instruct)))
++        if len(texts) > 2:
++            raise RuntimeError("CUDA out of memory")
++        return [
++            np.array([float(len(text))], dtype=np.float32)
++            for text in texts
++        ], 24_000
++
++
++class AtomicBatchTests(unittest.IsolatedAsyncioTestCase):
++    async def test_oom_bisection_keeps_items_and_instructions_atomic(self):
++        backend = MemoryLimitedBackend()
++        items = [
++            AtomicGenerationChunk(
++                id=f"slide-{index:02d}",
++                text=f"complete slide {index}",
++                instruct=f"pace {index}",
++            )
++            for index in range(1, 5)
++        ]
++
++        audio, sample_rate = await _generate_atomic_batch_adaptive(
++            backend,
++            items,
++            {"preset_voice_id": "ExampleSpeaker"},
++            "en",
++            None,
++        )
++
++        self.assertEqual(sample_rate, 24_000)
++        self.assertEqual(
++            [texts for texts, _ in backend.calls],
++            [
++                [item.text for item in items],
++                [item.text for item in items[:2]],
++                [item.text for item in items[2:]],
++            ],
++        )
++        self.assertEqual(
++            [prompts for _, prompts in backend.calls],
++            [
++                [item.instruct for item in items],
++                [item.instruct for item in items[:2]],
++                [item.instruct for item in items[2:]],
++            ],
++        )
++        self.assertEqual(
++            [segment.tolist() for segment in audio],
++            [[float(len(item.text))] for item in items],
++        )
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/backend/tests/test_chunked_tts.py b/backend/tests/test_chunked_tts.py
+new file mode 100644
+index 0000000..cea7ca2
+--- /dev/null
++++ b/backend/tests/test_chunked_tts.py
+@@ -0,0 +1,82 @@
++import numpy as np
++import pytest
++
++from backend.utils.chunked_tts import generate_chunked
++
++
++class BatchBackend:
++    def __init__(self):
++        self.batch_calls = []
++        self.single_calls = []
++
++    async def generate(self, text, voice_prompt, language, seed, instruct):
++        self.single_calls.append(text)
++        return np.array([float(len(text))], dtype=np.float32), 24_000
++
++    async def generate_batch(self, texts, voice_prompt, language, seed, instruct):
++        self.batch_calls.append(list(texts))
++        return [np.array([float(len(text))], dtype=np.float32) for text in texts], 24_000
++
++
++class MemoryLimitedBatchBackend(BatchBackend):
++    async def generate_batch(self, texts, voice_prompt, language, seed, instruct):
++        self.batch_calls.append(list(texts))
++        if len(texts) > 2:
++            raise RuntimeError("CUDA out of memory")
++        return [np.array([float(len(text))], dtype=np.float32) for text in texts], 24_000
++
++
++@pytest.mark.asyncio
++async def test_generate_chunked_batches_supported_backend_in_order():
++    backend = BatchBackend()
++
++    audio, sample_rate = await generate_chunked(
++        backend,
++        "One. Two. Three.",
++        {},
++        max_chunk_chars=6,
++        crossfade_ms=0,
++        batch_size=2,
++    )
++
++    assert sample_rate == 24_000
++    assert backend.batch_calls == [["One.", "Two."]]
++    assert backend.single_calls == ["Three."]
++    assert audio.tolist() == [4.0, 4.0, 6.0]
++
++
++@pytest.mark.asyncio
++async def test_generate_chunked_does_not_batch_when_seed_is_requested():
++    backend = BatchBackend()
++
++    await generate_chunked(
++        backend,
++        "One. Two. Three.",
++        {},
++        seed=10,
++        max_chunk_chars=6,
++        crossfade_ms=0,
++        batch_size=2,
++    )
++
++    assert backend.batch_calls == []
++    assert backend.single_calls == ["One.", "Two.", "Three."]
++
++
++@pytest.mark.asyncio
++async def test_generate_chunked_halves_oom_batch_before_using_serial_generation():
++    backend = MemoryLimitedBatchBackend()
++
++    audio, sample_rate = await generate_chunked(
++        backend,
++        "One. Two. Three. Four.",
++        {},
++        max_chunk_chars=6,
++        crossfade_ms=0,
++        batch_size=4,
++    )
++
++    assert sample_rate == 24_000
++    assert backend.batch_calls == [["One.", "Two.", "Three.", "Four."], ["One.", "Two."], ["Three.", "Four."]]
++    assert backend.single_calls == []
++    assert audio.tolist() == [4.0, 4.0, 6.0, 5.0]
+diff --git a/backend/utils/chunked_tts.py b/backend/utils/chunked_tts.py
+index 1f43379..f4ee3ee 100644
+--- a/backend/utils/chunked_tts.py
++++ b/backend/utils/chunked_tts.py
+@@ -210,6 +210,7 @@ async def generate_chunked(
+     instruct: str | None = None,
+     max_chunk_chars: int = DEFAULT_MAX_CHUNK_CHARS,
+     crossfade_ms: int = 50,
++    batch_size: int = 1,
+     trim_fn=None,
+ ) -> Tuple[np.ndarray, int]:
+     """Generate audio with automatic chunking for long text.
+@@ -235,6 +236,10 @@ async def generate_chunked(
+     crossfade_ms : int
+         Crossfade duration in milliseconds between chunks.  0 for a hard
+         cut with no overlap (default 50).
++    batch_size : int
++        Number of adjacent chunks to submit together when the backend
++        implements ``generate_batch``.  Defaults to 1, preserving serial
++        inference for engines without a supported batch API.
+     trim_fn : callable | None
+         Optional ``(audio, sample_rate) -> audio`` post-processing
+         function applied to each chunk before concatenation (e.g.
+@@ -244,6 +249,9 @@ async def generate_chunked(
+     -------
+     (audio, sample_rate) : Tuple[np.ndarray, int]
+     """
++    if batch_size < 1:
++        raise ValueError("batch_size must be at least 1")
++
+     chunks = split_text_into_chunks(text, max_chunk_chars)
+ 
+     if len(chunks) <= 1:
+@@ -269,7 +277,106 @@ async def generate_chunked(
+     audio_chunks: List[np.ndarray] = []
+     sample_rate: int | None = None
+ 
+-    for i, chunk_text in enumerate(chunks):
++    # Qwen CustomVoice exposes a real batch API.  Only use it when a seed was
++    # not requested: serial generation deliberately varies the seed by chunk,
++    # which cannot be reproduced by one batched sampling call.
++    generate_batch = getattr(backend, "generate_batch", None)
++    use_batching = batch_size > 1 and seed is None and callable(generate_batch)
++    effective_batch_size = batch_size if use_batching else 1
++    if batch_size > 1 and not use_batching:
++        logger.info(
++            "Chunk batching unavailable for this backend or deterministic seed; using serial generation"
++        )
++
++    async def generate_batch_with_oom_fallback(
++        texts: List[str],
++        first_chunk_number: int,
++    ) -> Tuple[List[np.ndarray], int]:
++        """Generate *texts*, splitting a CUDA-OOM batch into smaller batches.
++
++        Long passages vary substantially in generated codec length, so a batch
++        that usually fits can occasionally exceed VRAM.  Halving preserves as
++        much GPU parallelism as the available memory permits; the previous
++        behaviour retried every item serially after any batch OOM.
++        """
++        try:
++            generated_audio, generated_sr = await generate_batch(
++                texts,
++                voice_prompt,
++                language,
++                None,
++                instruct,
++            )
++            return list(generated_audio), generated_sr
++        except RuntimeError as error:
++            if "out of memory" not in str(error).lower():
++                raise
++
++            last_chunk_number = first_chunk_number + len(texts) - 1
++            if len(texts) == 1:
++                logger.warning(
++                    "Chunk %d ran out of GPU memory in batch mode; retrying it singly",
++                    first_chunk_number,
++                )
++                chunk_audio, chunk_sr = await backend.generate(
++                    texts[0],
++                    voice_prompt,
++                    language,
++                    None,
++                    instruct,
++                )
++                return [chunk_audio], chunk_sr
++
++            logger.warning(
++                "Batch %d-%d ran out of GPU memory; retrying as smaller batches",
++                first_chunk_number,
++                last_chunk_number,
++            )
++            try:
++                import torch
++
++                if torch.cuda.is_available():
++                    torch.cuda.empty_cache()
++            except ImportError:
++                pass
++
++            midpoint = len(texts) // 2
++            left_audio, left_sr = await generate_batch_with_oom_fallback(
++                texts[:midpoint], first_chunk_number
++            )
++            right_audio, right_sr = await generate_batch_with_oom_fallback(
++                texts[midpoint:], first_chunk_number + midpoint
++            )
++            if left_sr != right_sr:
++                raise RuntimeError(
++                    "TTS backend returned different sample rates while recovering from CUDA OOM"
++                )
++            return left_audio + right_audio, left_sr
++
++    for start in range(0, len(chunks), effective_batch_size):
++        batch_texts = chunks[start : start + effective_batch_size]
++        if use_batching and len(batch_texts) > 1:
++            logger.info(
++                "Generating chunks %d-%d/%d as a batch (%d items)",
++                start + 1,
++                start + len(batch_texts),
++                len(chunks),
++                len(batch_texts),
++            )
++            batch_audio, batch_sr = await generate_batch_with_oom_fallback(
++                batch_texts, start + 1
++            )
++
++            for chunk_audio in batch_audio:
++                if trim_fn is not None:
++                    chunk_audio = trim_fn(chunk_audio, batch_sr)
++                audio_chunks.append(np.asarray(chunk_audio, dtype=np.float32))
++            if sample_rate is None:
++                sample_rate = batch_sr
++            continue
++
++        i = start
++        chunk_text = batch_texts[0]
+         logger.info(
+             "Generating chunk %d/%d (%d chars)",
+             i + 1,
