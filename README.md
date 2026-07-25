@@ -1,7 +1,7 @@
 # OratorDeck
 
-> Turn coherent slides and speaker notes into a narrated, captioned, visually
-> annotated presentation video — locally.
+> Quickly prepare a deck talk by generating a narrated video with timed
+> captions and underlined visual anchors.
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -11,69 +11,108 @@
 
 ### What is OratorDeck?
 
-OratorDeck is a local-first production pipeline for turning a slide deck into a
-polished presentation video.
+OratorDeck helps users quickly prepare deck presentations by generating
+narrated videos with timed captions and underlined visual anchors. Each slide
+serves as a static background, and its visible anchor phrases are underlined as
+they are spoken.
 
-Today, it accepts two aligned inputs:
+There are two ways to use it:
 
-- `resources/SPEAKER_NOTES.md` — the narration, target duration, and visual
-  anchors for each slide.
-- `resources/generated-images/` — one rendered image for each slide.
+1. **Prompt-first skill:** provide one prompt per slide; the skill generates the
+   slide images and synchronized speaker notes, then runs the complete video
+   workflow.
+2. **Standalone core pipeline:** provide your own speaker notes and slide
+   images, guarantee that they agree, and run the video workflow directly.
 
-The user currently guarantees that the notes and slide images describe the same
-content. OratorDeck preserves that alignment through slide-atomic text-to-speech,
-reference-corrected subtitles, OCR-based visual matching, and deterministic
-video assembly.
+### 1. Prompt-first skill: prompts to finished video
 
-An optional agent skill now adds a prompt-first authoring layer: it helps define
-the desired slides as self-contained Markdown prompts, generates images and
-synchronized narration from those shared sources, audits their contract, and
-then passes the aligned assets through the existing video pipeline. The core
-runtime remains usable without the skill. The name **OratorDeck** is
-intentionally not tied to one model or one renderer.
-
-### What works today
-
-- Parses Markdown notes into **one indivisible chunk per slide**.
-- Reads a target duration for every slide and asks the TTS engine for a matching
-  speaking pace.
-- Batches complete slide chunks for GPU throughput without splitting a slide's
-  narration.
-- Produces one WAV per slide plus a joined keynote WAV and a machine-readable
-  timing report.
-- Transcribes the generated speech with Whisper and can correct its wording
-  against the source manuscript while retaining the detected timestamps.
-- Treats **bold phrases** in the notes as visual anchors.
-- Finds those anchors in the slide image with OCR and underlines them when the
-  corresponding words are spoken.
-- Renders one static-background video clip per slide and concatenates the clips
-  into a final MP4.
-- Keeps the inputs, intermediate artifacts, reports, logs, and final output for
-  each run in one timestamped directory.
-- Ships an optional installable skill for prompt-defined slides, aligned image
-  and speaker-note generation, source auditing, and pipeline handoff.
-
-### Pipeline
+This is the recommended path when the deck is still being authored. Install
+[`oratordeck-prompt-first`](skills/oratordeck-prompt-first), then prepare one
+self-contained Markdown prompt for every slide:
 
 ```text
-SPEAKER_NOTES.md ──> slide chunks ──> batched TTS ──> slide WAVs
-       │                                      │
-       │                                      └──> timing report
-       │
-       └──> bold anchors
-
-joined WAV ──> Whisper timestamps ──> manuscript-corrected subtitles
-
-slide images ──> OCR positions ─┐
-bold anchors ───────────────────┼──> timed underlines ──> slide clips ──> MP4
-timing/subtitles ───────────────┘
+resources/
+├── slide-01_opening.md
+├── slide-02_problem.md
+├── slide-03_method.md
+└── ...
 ```
 
-Each slide remains the unit of authorship, synthesis, timing, diagnosis, and
-rendering. A failure on one slide can therefore be inspected or regenerated
-without turning the presentation into arbitrary sentence fragments.
+Each file states the slide's role, audience takeaway, and a fenced
+image-generation prompt; every intended visible label is written exactly in
+double quotes. See the skill's
+[prompt contract](skills/oratordeck-prompt-first/references/prompt-contract.md)
+for the complete template.
 
-### Input contract
+Those prompts are the authoritative deck sources. From them, the skill:
+
+1. validates the slide argument, visible wording, reading order, and claim
+   boundaries;
+2. generates one matching 16:9 image per prompt;
+3. derives timed speaker notes from the same prompts;
+4. reuses visible slide wording as spoken bold anchors;
+5. audits prompt, image, note, and anchor coverage;
+6. runs TTS, subtitle generation, OCR matching, per-slide rendering, and final
+   video assembly.
+
+```text
+per-slide Markdown prompts
+            │
+            ▼
+  OratorDeck prompt-first skill
+            │
+            ├──> aligned slide images
+            └──> timed notes + spoken anchors
+                         │
+                         ▼
+             OratorDeck media pipeline
+                         │
+                         ▼
+       narrated, captioned, anchor-annotated MP4
+```
+
+In other words, once the per-slide prompts are ready, the skill can carry the
+deck through to the finished video in one guided workflow. If you only have a
+presentation brief, the skill can also help design the prompts first.
+
+Ask Codex to install the skill directly from:
+
+```text
+https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
+```
+
+Or copy it into your Codex skills directory:
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/oratordeck-prompt-first "${CODEX_HOME:-$HOME/.codex}/skills/"
+```
+
+Then invoke it, for example:
+
+```text
+Use $oratordeck-prompt-first with my per-slide prompts to generate the slide
+images, synchronized English speaker notes, and final annotated video.
+```
+
+The skill needs an image-generation capability to render the slides and uses
+the local OratorDeck runtime described below for media production. It does not
+invent missing evidence, metrics, citations, or other factual content.
+
+### 2. Standalone core pipeline: your notes and images
+
+The skill is not required. You can use OratorDeck directly by preparing:
+
+- `resources/SPEAKER_NOTES.md` — narration, target duration, and bold visual
+  anchors for every slide;
+- `resources/generated-images/` — one rendered image for every narrated slide.
+
+In this mode, **you are responsible for ensuring that the notes and images
+describe the same content**. OratorDeck preserves that alignment during media
+generation, but does not infer or repair semantic inconsistencies between the
+two inputs.
+
+#### Speaker-note contract
 
 Speaker notes use one section per slide:
 
@@ -102,7 +141,7 @@ The current contract is deliberately simple:
 Target durations are goals rather than guarantees. Natural speech, model
 behavior, and the configured timing tolerance determine the final duration.
 
-### Quick start
+#### Install and run the core pipeline
 
 Use Python 3.11, install the OratorDeck dependencies, then prepare the pinned
 Voicebox backend:
@@ -128,8 +167,41 @@ scripts/generate-keynote-workflow.sh
 ```
 
 Users edit the input paths, voice profile, batch size, timing tolerance, GPU
-selection, and output name directly in that file. A run produces a layout
-similar to:
+selection, and output name directly in that file.
+
+### What the media pipeline does
+
+- Keeps each slide as **one indivisible unit** for authorship, TTS, timing,
+  diagnosis, and rendering.
+- Batches complete slide chunks for GPU throughput without splitting one
+  slide's narration.
+- Produces one WAV per slide, a joined keynote WAV, and a machine-readable
+  timing report.
+- Uses Whisper timestamps for captions and optional manuscript-based wording
+  correction.
+- Treats **bold phrases** in the notes as visual anchors.
+- Locates those phrases in the slide image with OCR and underlines them when
+  they are spoken.
+- Renders one static-background clip per slide and concatenates the clips into
+  the final MP4.
+
+```text
+SPEAKER_NOTES.md ──> slide chunks ──> batched TTS ──> slide WAVs
+       │                                      │
+       │                                      └──> timing report
+       │
+       └──> bold anchors
+
+joined WAV ──> Whisper timestamps ──> manuscript-corrected subtitles
+
+slide images ──> OCR positions ─┐
+bold anchors ───────────────────┼──> timed underlines ──> slide clips ──> MP4
+timing/subtitles ───────────────┘
+```
+
+### Run output
+
+Every run is kept in one timestamped directory:
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -157,42 +229,6 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 Generated media, model weights, caches, the patched Voicebox checkout, local
 environments, logs, and private presentation materials are excluded from source
 control.
-
-### Optional prompt-first skill
-
-The installable skill lives at
-[`skills/oratordeck-prompt-first`](skills/oratordeck-prompt-first). It can:
-
-1. turn a presentation brief into one authoritative Markdown prompt per slide;
-2. use an available image-generation capability to render one matching image
-   per prompt;
-3. derive timed speaker notes whose bold anchors reuse visible slide wording;
-4. audit prompt, note, and image coverage before running OratorDeck;
-5. configure, monitor, and verify the existing end-to-end media workflow.
-
-Ask Codex to install it directly from:
-
-```text
-https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
-```
-
-Or copy the skill directory into your Codex skills directory:
-
-```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-cp -R skills/oratordeck-prompt-first "${CODEX_HOME:-$HOME/.codex}/skills/"
-```
-
-Then invoke it explicitly, for example:
-
-```text
-Use $oratordeck-prompt-first to turn my 12-slide research talk brief into
-prompt-defined slide images, synchronized English speaker notes, and a video.
-```
-
-Image rendering requires an image-generation capability available to the
-agent. The skill keeps factual claims under user control and does not invent
-missing evidence, metrics, or citations.
 
 ### Current scope and limitations
 
@@ -273,56 +309,95 @@ under their own terms. See [Third-Party Notices](THIRD_PARTY_NOTICES.md).
 
 ### OratorDeck 是什么？
 
-OratorDeck 是一套本地优先的演示视频生产流水线，用于把一组幻灯片制作成完整的演讲视频。
+OratorDeck 通过生成带定时字幕和视觉锚点下划线标识的演讲视频，帮助用户快速准备 deck
+演讲。视频以每张 slide 作为静态背景，并在讲到视觉锚点时标出对应元素。
 
-当前版本接收两份已经对齐的输入：
+它提供两种用法：
 
-- `resources/SPEAKER_NOTES.md`：每张幻灯片的讲稿、预期时长和视觉锚点。
-- `resources/generated-images/`：每张幻灯片对应的一张渲染图片。
+1. **Prompt-first skill：**用户准备每张 slide 的 prompt；skill 自动生成 slide 图片与
+   同步讲稿，并继续完成整套视频流程。
+2. **独立核心流水线：**用户自行准备讲稿和 slide 图片、保证二者一致，然后直接生成视频。
 
-现阶段由用户保证讲稿与图片表达的是同一内容。OratorDeck 通过以幻灯片为原子单位的
-TTS、参考讲稿校正的字幕、基于 OCR 的视觉匹配以及确定性的视频合成，在后续流程中保持
-这种对应关系。
+### 1. Prompt-first skill：从逐页 prompts 到最终视频
 
-现在还提供一个可选的 agent skill 作为 prompt-first 创作层：它帮助用户把目标幻灯片
-定义成自包含的 Markdown prompts，再从同一来源生成图片与同步讲稿、审计输入约定，并把
-对齐后的材料送入现有视频流水线。核心运行时不安装 skill 也可独立使用。
-**OratorDeck** 这个名字刻意不绑定某个模型或某个渲染器。
-
-### 当前已实现
-
-- 把 Markdown 讲稿解析为**每张幻灯片一个不可再分的 chunk**。
-- 读取每张幻灯片的预期时长，并据此向 TTS 模型要求相应语速。
-- 对完整的 slide chunks 进行 GPU batch，在不拆分单页讲稿的前提下提高吞吐量。
-- 输出逐页 WAV、合并后的完整 WAV 和机器可读的时间报告。
-- 使用 Whisper 转录语音；在保留识别时间戳的同时，可用原讲稿校正术语和措辞。
-- 把讲稿中的**加粗短语**作为视觉锚点。
-- 通过 OCR 在幻灯片图片中定位锚点，并在读到相应内容时显示下划线。
-- 为每张静态幻灯片生成视频片段，最后合并为完整 MP4。
-- 把每次运行的输入、中间产物、报告、日志和最终结果集中到一个带时间戳的目录。
-- 提供可选、可直接安装的 prompt-first skill，用于 prompts 定义、图片与讲稿协同生成、
-  源文件审计及现有流水线交接。
-
-### 流水线
+当 deck 仍处于创作阶段时，推荐使用这一方式。安装
+[`oratordeck-prompt-first`](skills/oratordeck-prompt-first)，然后为每张 slide 准备一份
+自包含的 Markdown prompt：
 
 ```text
-SPEAKER_NOTES.md ──> 逐页 chunks ──> 批量 TTS ──> 逐页 WAV
-       │                                      │
-       │                                      └──> 时间报告
-       │
-       └──> 加粗锚点
-
-完整 WAV ──> Whisper 时间戳 ──> 原讲稿校正字幕
-
-幻灯片图片 ──> OCR 坐标 ─────┐
-加粗锚点 ────────────────────┼──> 定时下划线 ──> 逐页视频 ──> MP4
-时间报告/字幕 ───────────────┘
+resources/
+├── slide-01_opening.md
+├── slide-02_problem.md
+├── slide-03_method.md
+└── ...
 ```
 
-一张幻灯片始终是写作、语音合成、时间控制、问题诊断和视频渲染的最小单位。因此，某一页
-出现问题时可以单独检查或重新生成，不会把整场演讲切成缺乏语义的任意句子碎片。
+每份文件都包含该 slide 的论证角色、观众应得出的结论以及 fenced 图片生成 prompt；所有
+预期显示的文字都用双引号准确写出。完整模板见 skill 的
+[prompt 约定](skills/oratordeck-prompt-first/references/prompt-contract.md)。
 
-### 输入约定
+这些 prompts 是 deck 的权威源文件。在此基础上，skill 会：
+
+1. 检查逐页论证、可见文字、阅读顺序和声明边界；
+2. 为每份 prompt 生成一张匹配的 16:9 图片；
+3. 从同一组 prompts 推导带预期时长的讲稿；
+4. 把 slide 上的可见文字复用为讲稿中的加粗语音锚点；
+5. 审计 prompts、图片、讲稿和锚点的覆盖关系；
+6. 继续完成 TTS、字幕、OCR 匹配、逐页渲染和最终视频合成。
+
+```text
+逐页 Markdown prompts
+          │
+          ▼
+ OratorDeck prompt-first skill
+          │
+          ├──> 相互一致的 slide 图片
+          └──> 定时讲稿＋语音锚点
+                       │
+                       ▼
+            OratorDeck 媒体流水线
+                       │
+                       ▼
+       带朗读、字幕和锚点标识的最终 MP4
+```
+
+也就是说，当逐页 prompts 准备好后，skill 可以在一次引导式工作流中直接产出最终视频。
+如果用户手中只有演讲需求或大纲，skill 也可以先帮助设计这些 prompts。
+
+可以让 Codex 直接从以下地址安装：
+
+```text
+https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
+```
+
+也可以手工复制到 Codex skills 目录：
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/oratordeck-prompt-first "${CODEX_HOME:-$HOME/.codex}/skills/"
+```
+
+安装后可这样调用：
+
+```text
+Use $oratordeck-prompt-first with my per-slide prompts to generate the slide
+images, synchronized English speaker notes, and final annotated video.
+```
+
+自动生成 slide 图片要求 agent 具备图片生成能力；媒体制作使用下文介绍的本地
+OratorDeck 运行环境。skill 不会擅自发明缺失的证据、指标、引用或其他事实内容。
+
+### 2. 独立核心流水线：使用自己的讲稿和图片
+
+不安装 skill 也能独立使用 OratorDeck。用户只需准备：
+
+- `resources/SPEAKER_NOTES.md`：每张 slide 的讲稿、预期时长和加粗视觉锚点；
+- `resources/generated-images/`：每张有讲稿的 slide 对应一张渲染图片。
+
+在这一模式下，**用户自行负责保证讲稿与图片表达相同内容**。OratorDeck 会在媒体生成
+过程中保持这种对应关系，但不会自动推断或修复两份输入之间的语义不一致。
+
+#### 讲稿约定
 
 讲稿按每张幻灯片一个 section 编写：
 
@@ -348,7 +423,7 @@ then build the evidence step by step.
 
 预期时长是目标而非绝对保证。最终时长还会受到自然语音、模型表现和允许误差的影响。
 
-### 快速开始
+#### 安装并运行核心流水线
 
 使用 Python 3.11 安装 OratorDeck 依赖，并准备固定版本的 Voicebox 后端：
 
@@ -372,7 +447,34 @@ scripts/generate-keynote-workflow.sh
 ```
 
 用户可以直接修改其中的输入路径、声音 profile、batch size、时间误差、GPU 和输出名称。
-每次运行会生成类似下面的集中目录：
+
+### 媒体流水线做什么
+
+- 把一张 slide 始终保留为写作、TTS、时间控制、诊断和渲染的**不可再分单元**。
+- 对完整 slide chunks 进行 GPU batch，不拆分单页讲稿。
+- 输出逐页 WAV、完整演讲 WAV 和机器可读的时间报告。
+- 使用 Whisper 时间戳制作字幕，并可依据原讲稿校正措辞。
+- 把讲稿中的**加粗短语**作为视觉锚点。
+- 通过 OCR 定位图片中的锚点文字，并在读到它时显示下划线。
+- 为每张静态 slide 渲染视频片段，最后合并成完整 MP4。
+
+```text
+SPEAKER_NOTES.md ──> 逐页 chunks ──> 批量 TTS ──> 逐页 WAV
+       │                                      │
+       │                                      └──> 时间报告
+       │
+       └──> 加粗锚点
+
+完整 WAV ──> Whisper 时间戳 ──> 原讲稿校正字幕
+
+幻灯片图片 ──> OCR 坐标 ─────┐
+加粗锚点 ────────────────────┼──> 定时下划线 ──> 逐页视频 ──> MP4
+时间报告/字幕 ───────────────┘
+```
+
+### 运行输出
+
+每次运行都会保存在一个带时间戳的集中目录中：
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -399,40 +501,6 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 生成的媒体、模型权重、缓存、打过补丁的 Voicebox checkout、本地环境、日志和私有演示
 材料都不会进入源码版本控制。
-
-### 可选的 prompt-first skill
-
-可安装 skill 位于
-[`skills/oratordeck-prompt-first`](skills/oratordeck-prompt-first)。它可以：
-
-1. 把演示需求转换成每张 slide 一份权威 Markdown prompt；
-2. 调用 agent 可用的图片生成能力，为每份 prompt 生成一张匹配图片；
-3. 生成含预期时长和可见文字锚点的同步讲稿；
-4. 在运行 OratorDeck 前审计 prompt、讲稿和图片的覆盖关系；
-5. 配置、监控并验收现有端到端媒体工作流。
-
-可以让 Codex 直接从以下地址安装：
-
-```text
-https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
-```
-
-也可以手工复制到 Codex skills 目录：
-
-```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-cp -R skills/oratordeck-prompt-first "${CODEX_HOME:-$HOME/.codex}/skills/"
-```
-
-安装后可这样显式调用：
-
-```text
-Use $oratordeck-prompt-first to turn my 12-slide research talk brief into
-prompt-defined slide images, synchronized English speaker notes, and a video.
-```
-
-自动渲染图片要求 agent 本身具备图片生成能力。skill 不会为了补齐页面而擅自发明证据、
-指标或引用。
 
 ### 当前范围与限制
 
