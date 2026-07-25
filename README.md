@@ -25,11 +25,12 @@ content. OratorDeck preserves that alignment through slide-atomic text-to-speech
 reference-corrected subtitles, OCR-based visual matching, and deterministic
 video assembly.
 
-The longer-term goal is broader: an agent skill will accept LLM prompts that
-describe the desired slides, generate the images and narration together, and
-then pass those naturally aligned assets through the existing video pipeline.
-The name **OratorDeck** is intentionally not tied to one model, one renderer, or
-the current two-input contract.
+An optional agent skill now adds a prompt-first authoring layer: it helps define
+the desired slides as self-contained Markdown prompts, generates images and
+synchronized narration from those shared sources, audits their contract, and
+then passes the aligned assets through the existing video pipeline. The core
+runtime remains usable without the skill. The name **OratorDeck** is
+intentionally not tied to one model or one renderer.
 
 ### What works today
 
@@ -49,6 +50,8 @@ the current two-input contract.
   into a final MP4.
 - Keeps the inputs, intermediate artifacts, reports, logs, and final output for
   each run in one timestamped directory.
+- Ships an optional installable skill for prompt-defined slides, aligned image
+  and speaker-note generation, source auditing, and pipeline handoff.
 
 ### Pipeline
 
@@ -155,6 +158,42 @@ Generated media, model weights, caches, the patched Voicebox checkout, local
 environments, logs, and private presentation materials are excluded from source
 control.
 
+### Optional prompt-first skill
+
+The installable skill lives at
+[`skills/oratordeck-prompt-first`](skills/oratordeck-prompt-first). It can:
+
+1. turn a presentation brief into one authoritative Markdown prompt per slide;
+2. use an available image-generation capability to render one matching image
+   per prompt;
+3. derive timed speaker notes whose bold anchors reuse visible slide wording;
+4. audit prompt, note, and image coverage before running OratorDeck;
+5. configure, monitor, and verify the existing end-to-end media workflow.
+
+Ask Codex to install it directly from:
+
+```text
+https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
+```
+
+Or copy the skill directory into your Codex skills directory:
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/oratordeck-prompt-first "${CODEX_HOME:-$HOME/.codex}/skills/"
+```
+
+Then invoke it explicitly, for example:
+
+```text
+Use $oratordeck-prompt-first to turn my 12-slide research talk brief into
+prompt-defined slide images, synchronized English speaker notes, and a video.
+```
+
+Image rendering requires an image-generation capability available to the
+agent. The skill keeps factual claims under user control and does not invent
+missing evidence, metrics, or citations.
+
 ### Current scope and limitations
 
 - The production path currently targets English narration.
@@ -176,9 +215,9 @@ control.
 - [x] Publish the sanitized, reproducible source distribution.
 - [ ] Add a project-level configuration schema while keeping the workflow
   script easy to edit.
-- [ ] Package OratorDeck as an agent skill.
-- [ ] Accept structured LLM prompts describing a presentation.
-- [ ] Generate matched slide images and speaker notes from the same prompt
+- [x] Package the prompt-first workflow as an optional installable agent skill.
+- [x] Accept structured LLM prompts describing a presentation.
+- [x] Generate matched slide images and speaker notes from the same prompt
   representation.
 - [ ] Validate visual–narrative consistency before synthesis.
 - [ ] Support pluggable image, TTS, transcription, and OCR backends.
@@ -245,9 +284,10 @@ OratorDeck 是一套本地优先的演示视频生产流水线，用于把一组
 TTS、参考讲稿校正的字幕、基于 OCR 的视觉匹配以及确定性的视频合成，在后续流程中保持
 这种对应关系。
 
-项目的下一阶段会更进一步：把 OratorDeck 封装成 agent skill，直接接收描述幻灯片的
-LLM prompts，同时生成图片与讲稿，再把这两份天然一致的材料送入现有视频流水线。
-**OratorDeck** 这个名字刻意不绑定某个模型、某个渲染器，也不局限于当前的双输入形式。
+现在还提供一个可选的 agent skill 作为 prompt-first 创作层：它帮助用户把目标幻灯片
+定义成自包含的 Markdown prompts，再从同一来源生成图片与同步讲稿、审计输入约定，并把
+对齐后的材料送入现有视频流水线。核心运行时不安装 skill 也可独立使用。
+**OratorDeck** 这个名字刻意不绑定某个模型或某个渲染器。
 
 ### 当前已实现
 
@@ -260,6 +300,8 @@ LLM prompts，同时生成图片与讲稿，再把这两份天然一致的材料
 - 通过 OCR 在幻灯片图片中定位锚点，并在读到相应内容时显示下划线。
 - 为每张静态幻灯片生成视频片段，最后合并为完整 MP4。
 - 把每次运行的输入、中间产物、报告、日志和最终结果集中到一个带时间戳的目录。
+- 提供可选、可直接安装的 prompt-first skill，用于 prompts 定义、图片与讲稿协同生成、
+  源文件审计及现有流水线交接。
 
 ### 流水线
 
@@ -358,6 +400,40 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 生成的媒体、模型权重、缓存、打过补丁的 Voicebox checkout、本地环境、日志和私有演示
 材料都不会进入源码版本控制。
 
+### 可选的 prompt-first skill
+
+可安装 skill 位于
+[`skills/oratordeck-prompt-first`](skills/oratordeck-prompt-first)。它可以：
+
+1. 把演示需求转换成每张 slide 一份权威 Markdown prompt；
+2. 调用 agent 可用的图片生成能力，为每份 prompt 生成一张匹配图片；
+3. 生成含预期时长和可见文字锚点的同步讲稿；
+4. 在运行 OratorDeck 前审计 prompt、讲稿和图片的覆盖关系；
+5. 配置、监控并验收现有端到端媒体工作流。
+
+可以让 Codex 直接从以下地址安装：
+
+```text
+https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
+```
+
+也可以手工复制到 Codex skills 目录：
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R skills/oratordeck-prompt-first "${CODEX_HOME:-$HOME/.codex}/skills/"
+```
+
+安装后可这样显式调用：
+
+```text
+Use $oratordeck-prompt-first to turn my 12-slide research talk brief into
+prompt-defined slide images, synchronized English speaker notes, and a video.
+```
+
+自动渲染图片要求 agent 本身具备图片生成能力。skill 不会为了补齐页面而擅自发明证据、
+指标或引用。
+
 ### 当前范围与限制
 
 - 当前生产路径面向英文演讲。
@@ -372,9 +448,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 - [x] 发布经过清理且可复现的源码。
 - [ ] 增加项目级配置格式，同时保留容易直接编辑的工作流脚本。
-- [ ] 把 OratorDeck 封装为 agent skill。
-- [ ] 接收描述演示内容的结构化 LLM prompts。
-- [ ] 从同一 prompt 表示同时生成相互匹配的幻灯片图片和讲稿。
+- [x] 把 prompt-first 工作流封装为可选、可安装的 agent skill。
+- [x] 接收描述演示内容的结构化 LLM prompts。
+- [x] 从同一 prompt 表示同时生成相互匹配的幻灯片图片和讲稿。
 - [ ] 在合成前自动检查视觉内容与讲稿的一致性。
 - [ ] 支持可插拔的图片、TTS、转录和 OCR 后端。
 - [ ] 支持逐页断点续作与更丰富的标注样式。
