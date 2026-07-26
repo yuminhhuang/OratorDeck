@@ -233,18 +233,25 @@ def test_review_box_state_and_geometry_must_agree(
         )
 
 
-def test_default_workflow_gates_tts_on_deck_review() -> None:
+def test_default_workflow_offers_verdict_without_blocking_tts() -> None:
     workflow = (
         Path(__file__).resolve().parents[1]
         / "scripts"
         / "generate-keynote-workflow.sh"
     ).read_text(encoding="utf-8")
 
-    assert "review_before_tts=true" in workflow
+    assert "open_pre_tts_verdict=true" in workflow
     prepare_index = workflow.index("scripts/prepare-deck-review.py")
-    exit_index = workflow.index("exit 0", prepare_index)
+    editor_index = workflow.index("-m oratordeck_verdict edit", prepare_index)
     tts_index = workflow.index("scripts/generate-english-keynote.py")
-    assert prepare_index < exit_index < tts_index
+    assert prepare_index < editor_index < tts_index
+    assert "exit 0" not in workflow[prepare_index:tts_index]
+    assert "review_available_at_start=false" in workflow
+    assert "Saving in the concurrently open editor" in workflow
+    assert "while media generation continues" in workflow
+    assert "interrupt and rerun" in workflow
+    assert '"$deck_review_file" &' in workflow
+    assert "trap stop_verdict_server EXIT" in workflow
     assert "scripts/apply-deck-review.py" in workflow
     assert '--ocr-output "$deck_ocr_file"' in workflow
     assert '--ocr-results "$deck_ocr_file"' in workflow
@@ -322,7 +329,8 @@ def test_pre_tts_editor_has_explicit_save_reset_and_editable_text() -> None:
     document = deck_editor.build_deck_review_html(payload)
 
     assert '"mode":"deck-review"' in document
-    assert "Pre-TTS full review." in document
+    assert "Optional concurrent review." in document
+    assert "Save never changes a run already in progress" in document
     assert "scriptInput.readOnly = false" in document
     assert "saveReviewButton.hidden = false" in document
     assert 'id="reset-editor">Reset</button>' in document

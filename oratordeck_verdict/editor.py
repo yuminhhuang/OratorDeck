@@ -408,12 +408,12 @@ def build_deck_review_html(payload: dict) -> str:
           scriptInput.readOnly = false;
           saveReviewButton.hidden = false;
           brandSubtitle.textContent =
-            "Pre-TTS quality gate · manuscript + anchors + bounding boxes";
+            "Pre-TTS review checkpoint · manuscript + anchors + bounding boxes";
           manuscriptHeading.textContent = "Manuscript and anchors";
           manuscriptHelp.textContent =
             "Edit narration directly. Text inside **double asterisks** is an anchor.";
           modeNotice.innerHTML =
-            "<strong>Pre-TTS full review.</strong> Inspect every slide, then edit narration, target time, bold anchors, and bounding boxes before generating audio.";
+            "<strong>Optional concurrent review.</strong> Inspect and correct narration, target time, bold anchors, and bounding boxes while media generation continues. Save never changes a run already in progress; restart that run to use the corrections.";
         }
       }
 

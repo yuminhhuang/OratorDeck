@@ -293,10 +293,16 @@ def serve_editor(
     open_browser: bool = True,
 ) -> None:
     server, url = create_editor_server(html_path, state_path, port=port)
-    print(f"Verdict panel: {url}")
-    print(f"Bound JSON: {server.state_path}")
-    print("Save overwrites that JSON; Reset restores its generated initial state.")
-    print("Keep this process running while editing; press Ctrl+C when finished.")
+    print(f"Verdict panel: {url}", flush=True)
+    print(f"Bound JSON: {server.state_path}", flush=True)
+    print(
+        "Save overwrites that JSON; Reset restores its generated initial state.",
+        flush=True,
+    )
+    print(
+        "Keep this process running while editing; press Ctrl+C when finished.",
+        flush=True,
+    )
     if open_browser:
         webbrowser.open(url)
     try:

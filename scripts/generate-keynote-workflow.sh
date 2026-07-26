@@ -7,44 +7,10 @@ cd "$repo_dir"
 # This file is intentionally a playground. Edit the name, paths, and command
 # arguments below directly for each run.
 run_name="my-talk"
-review_before_tts=true
+open_pre_tts_verdict=true
 deck_verdict_file="$repo_dir/resources/.oratordeck/deck-verdict.html"
 deck_review_file="$repo_dir/resources/.oratordeck/deck-review.json"
 deck_ocr_file="$repo_dir/resources/.oratordeck/deck-ocr.json"
-
-# The default first run stops before audio and creates the restricted slide
-# editor plus reusable image-bound OCR results. Review every page, then save
-# deck-review.json at the path above and run this script again. Set
-# review_before_tts=false to bypass this quality gate.
-if [[ "$review_before_tts" == true && ! -f "$deck_review_file" ]]; then
-  ./.venv/bin/python scripts/prepare-deck-review.py \
-    resources/SPEAKER_NOTES.md \
-    resources/generated-images \
-    --output "$deck_verdict_file" \
-    --review-json "$deck_review_file" \
-    --ocr-output "$deck_ocr_file" \
-    --overwrite
-  echo "Pre-TTS review required: $deck_verdict_file"
-  echo "Open the state-bound editor:"
-  echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\""
-  echo "Save overwrites $deck_review_file; Reset restores its initial JSON."
-  echo "Then run scripts/generate-keynote-workflow.sh again."
-  exit 0
-fi
-
-# A review created before reusable OCR results were introduced remains usable.
-# Rebuild only the source-bound OCR intermediate, then continue with the saved
-# review; source hashes are validated again before media generation.
-if [[ "$review_before_tts" == true && ! -f "$deck_ocr_file" ]]; then
-  ./.venv/bin/python scripts/prepare-deck-review.py \
-    resources/SPEAKER_NOTES.md \
-    resources/generated-images \
-    --output "$deck_verdict_file" \
-    --review-json "$deck_review_file" \
-    --ocr-output "$deck_ocr_file" \
-    --overwrite
-  echo "Rebuilt reusable OCR results: $deck_ocr_file"
-fi
 
 run_dir="$repo_dir/data/runs/${run_name}-$(date +%Y%m%d-%H%M%S)"
 input_dir="$run_dir/input"
@@ -60,9 +26,55 @@ cp -a resources/generated-images/. "$images_dir/"
 # Keep the whole console trace with the other artifacts from this run.
 exec > >(tee "$run_dir/workflow.log") 2>&1
 
-# 1. Apply the reviewed deck, or format directly when the gate is disabled.
+# Freeze the review decision at launch. Saving in the concurrently open editor
+# never changes an in-flight run: interrupt and rerun to use the new review.
+review_available_at_start=false
 if [[ -f "$deck_review_file" ]]; then
+  review_available_at_start=true
   cp "$deck_review_file" "$input_dir/deck-review.json"
+fi
+
+# Prepare the optional pre-TTS editor and reusable image-bound OCR results.
+# Unlike the former gate, this never exits or waits for human review.
+if [[ ! -f "$deck_verdict_file" || ! -f "$deck_ocr_file" ]]; then
+  ./.venv/bin/python scripts/prepare-deck-review.py \
+    resources/SPEAKER_NOTES.md \
+    resources/generated-images \
+    --output "$deck_verdict_file" \
+    --review-json "$deck_review_file" \
+    --ocr-output "$deck_ocr_file" \
+    --overwrite
+fi
+verdict_server_pid=""
+stop_verdict_server() {
+  if [[ -n "$verdict_server_pid" ]]; then
+    kill "$verdict_server_pid" 2>/dev/null || true
+    wait "$verdict_server_pid" 2>/dev/null || true
+  fi
+}
+trap stop_verdict_server EXIT
+
+echo "Optional Deck Verdict: $deck_verdict_file"
+echo "State-bound editor command:"
+echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\""
+echo "Save overwrites $deck_review_file; Reset restores its initial JSON."
+if [[ "$open_pre_tts_verdict" == true ]]; then
+  ./.venv/bin/python -m oratordeck_verdict edit \
+    "$deck_verdict_file" \
+    "$deck_review_file" &
+  verdict_server_pid=$!
+  echo "The editor is starting in the background while media generation continues."
+fi
+if [[ "$review_available_at_start" == true ]]; then
+  echo "This run uses the review snapshot that existed when it started."
+  echo "New edits apply on the next run; interrupt and rerun if they are needed."
+else
+  echo "No saved review existed at launch, so this run continues from the source inputs."
+  echo "Review is optional; Save, then interrupt and rerun only if corrections are needed."
+fi
+
+# 1. Apply the review snapshot captured at launch, or format the source directly.
+if [[ "$review_available_at_start" == true ]]; then
   review_ocr_args=()
   if [[ -f "$deck_ocr_file" ]]; then
     review_ocr_args=(
@@ -139,3 +151,6 @@ echo "Review and correct anchors with the state-bound editor:"
 echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$video_dir/anchor-verdict.html\" \"$video_dir/anchor-overrides.json\""
 echo "After Save updates $video_dir/anchor-overrides.json, rerender with:"
 echo "  .venv/bin/python scripts/generate-keynote-video.py --rerender-from-report \"$video_dir/anchor-video-report.json\" --anchor-overrides \"$video_dir/anchor-overrides.json\" --overwrite"
+if [[ -n "$verdict_server_pid" ]]; then
+  echo "The background pre-TTS editor closes now; use its printed command to reopen it."
+fi
