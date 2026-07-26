@@ -15,6 +15,10 @@ OratorDeck 通过生成带视觉锚点下划线的演讲视频，并同时提供
 
 这样的结果可用于演练、审阅、分享或发布演示，无需手工录制和剪辑每张 slide。
 
+每次媒体生成还会输出一份机器可读的锚点映射，包含页号、锚点在该页中从 1 开始的出现
+次序，以及归一化位置。用户可以用它把锚点匹配到原始可编辑 slide 中的元素，并为这些
+元素制作出现/退出动画。
+
 OratorDeck 刻意分为两个相互独立、又可组合使用的部分：
 
 1. **Skill 辅助创作：**可选的 `$oratordeck` skill 把逐页 prompts 转换为相互对齐的
@@ -182,6 +186,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   └── my-talk.lrc
 ├── video/
 │   ├── clips/
+│   ├── anchor-animation-cues.json
 │   ├── anchor-video-report.json
 │   └── my-talk.mp4
 └── workflow.log
@@ -189,6 +194,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 主要结果是 `video/my-talk.mp4`。此外还会得到完整音频、独立字幕文件、逐页音频和视频、
 输入快照、时间信息、锚点结果以及完整生成日志。
+`video/anchor-animation-cues.json` 是供可编辑 slide 动画使用的精简中间产物：成功定位
+的锚点包含归一化的 `x`/`y`/`width`/`height` 包围框与中心点；未定位锚点仍按原次序
+保留，并将位置设为 `null`，因此后续动画编号不会错位。
 
 ## 当前限制
 

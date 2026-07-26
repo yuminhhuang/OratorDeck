@@ -16,7 +16,7 @@ subtitles_dir="$run_dir/subtitles"
 video_dir="$run_dir/video"
 
 mkdir -p "$input_dir" "$images_dir" "$audio_dir" "$subtitles_dir" "$video_dir"
-cp resources/SPEAKER_NOTES.md "$input_dir/SPEAKER_NOTES.md"
+cp resources/SPEAKER_NOTES.md "$input_dir/"
 cp -a resources/generated-images/. "$images_dir/"
 
 # Keep the whole console trace with the other artifacts from this run.
@@ -47,13 +47,14 @@ CUDA_VISIBLE_DEVICES=0 ./.venv/bin/python scripts/generate-english-subtitles.py 
   --reference "$input_dir/SPEAKER_NOTES_TTS.txt" \
   --output-prefix "$subtitles_dir/$run_name"
 
-# 4. Render each slide clip and concatenate the final annotated video.
+# 4. Resolve normalized animation cues, render each slide clip, and concatenate.
 ./.venv/bin/python scripts/generate-keynote-video.py \
   "$input_dir/SPEAKER_NOTES_CHUNKS.json" \
   "$audio_dir/$run_name.timing.json" \
   "$images_dir" \
   --subtitles "$subtitles_dir/$run_name.srt" \
   --work-dir "$video_dir" \
+  --animation-cues-output "$video_dir/anchor-animation-cues.json" \
   --output "$video_dir/$run_name.mp4" \
   --overwrite
 

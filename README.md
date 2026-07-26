@@ -17,6 +17,11 @@ subtitles are delivered as separate SRT, WebVTT, and LRC files.
 The result is useful for rehearsing, reviewing, sharing, or publishing a
 presentation without manually recording and editing every slide.
 
+Each media run also produces a machine-readable anchor map with the slide
+number, the anchor's 1-based appearance order on that slide, and its normalized
+position. You can use this map to match anchors to elements in the original
+editable slides and build appear/exit animations there.
+
 OratorDeck is intentionally split into two independent, composable parts:
 
 1. **Skill-assisted authoring:** the optional `$oratordeck` skill turns
@@ -201,6 +206,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   └── my-talk.lrc
 ├── video/
 │   ├── clips/
+│   ├── anchor-animation-cues.json
 │   ├── anchor-video-report.json
 │   └── my-talk.mp4
 └── workflow.log
@@ -209,6 +215,10 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 The main deliverable is `video/my-talk.mp4`. You also receive the complete
 audio, separate subtitle files, one audio/video file per slide, a snapshot of
 the inputs, timing information, anchor results, and the full generation log.
+`video/anchor-animation-cues.json` is the compact intermediate artifact for
+editable-slide animation: resolved anchors have normalized
+`x`/`y`/`width`/`height` boxes and centers, while unresolved anchors remain in
+sequence with a `null` position so later animation numbers do not shift.
 
 ## Current limitations
 

@@ -43,10 +43,14 @@ slide-NN_slug.md prompts
                      │                         │                       │
                      └──────── timing report ──┼───────────────────────┤
                                                ▼                       ▼
-                                      subtitle timing + OCR positions
+                                       subtitle timing + OCR positions
                                                │
-                                               ▼
-                                  annotated slide clips ──> final MP4
+                              ┌────────────────┴─────────────────┐
+                              ▼                                  ▼
+                    normalized animation cues       annotated slide clips
+                                                                  │
+                                                                  ▼
+                                                              final MP4
 ```
 
 ### Design invariants
@@ -57,8 +61,8 @@ slide-NN_slug.md prompts
   TTS.
 - GPU batching groups complete slides without changing slide boundaries.
 - Inputs are copied into a timestamped run directory before generation.
-- Long-running TTS and video reports are written progressively and end in
-  `completed` or `failed`.
+- Long-running TTS and video reports are written progressively. Rendering runs
+  end in `completed` or `failed`; video-planning dry runs end in `planned`.
 - SHA-256 links derived artifacts to their exact source files.
 - Generated media, models, caches, and private presentation inputs are ignored
   by Git.
@@ -180,8 +184,8 @@ Model downloads are redirected into the OratorDeck checkout.
 
 RapidOCR extracts visible text lines and bounding boxes from each slide image.
 Each bold anchor is fuzzy-matched to one or more OCR lines. Successful matches
-are converted into underline boxes; unsuccessful matches are retained in the
-report as unresolved anchors.
+are converted into anchor text boxes and separate underline boxes; unsuccessful
+matches are retained as unresolved anchors.
 
 Anchor timing uses two strategies:
 
@@ -191,6 +195,25 @@ Anchor timing uses two strategies:
 
 The fallback ensures rendering can continue when subtitle alignment is
 incomplete, while the report preserves the timing source and match score.
+
+The same planning pass writes `anchor-animation-cues.json` using format
+`oratordeck.anchor-animation-cues.v1`. Its contract is:
+
+- slides retain their 1-based presentation number;
+- every slide records its source image dimensions and SHA-256;
+- anchors retain their 1-based narration order within the slide as
+  `appearance_order`;
+- `position` is the union bounding box around the matched anchor text;
+- `fragments` preserves individual boxes when an anchor spans multiple lines;
+- every box uses normalized `x`, `y`, `width`, `height`, `center_x`, and
+  `center_y` values in the inclusive 0–1 coordinate space;
+- the coordinate origin is the source slide image's top-left corner, with x
+  increasing rightward and y increasing downward;
+- unresolved anchors remain in order with `position: null` and no fragments.
+
+The cue file and audit report are written before FFmpeg starts. `--dry-run`
+therefore performs OCR planning and produces both JSON artifacts without
+encoding video.
 
 ### Stage 5: rendering and concatenation
 
@@ -212,8 +235,10 @@ through `imageio-ffmpeg`.
 - total duration and slide count;
 - resolved and unresolved anchor counts;
 - subtitle-timed and proportionally timed anchor counts;
-- per-slide OCR text, anchor scores, timing, boxes, and clip paths;
-- `rendering`, `completed`, or `failed` status.
+- the animation-cue artifact path;
+- per-slide OCR text, anchor scores, timing, text/underline boxes, and clip
+  paths;
+- `planned`, `rendering`, `completed`, or `failed` status.
 
 ### Timestamped workflow
 
@@ -244,6 +269,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   └── my-talk.lrc
 ├── video/
 │   ├── clips/
+│   ├── anchor-animation-cues.json
 │   ├── anchor-video-report.json
 │   └── my-talk.mp4
 └── workflow.log
@@ -299,6 +325,7 @@ Production validation should additionally confirm:
 - prompt, image, note, WAV, and clip counts agree;
 - final WAV, subtitle end, report duration, and MP4 duration agree;
 - the final MP4 has H.264 video and AAC audio;
+- cue and report slide/anchor counts agree;
 - timing misses and unresolved anchors are reviewed;
 - `workflow.log` contains no traceback or out-of-memory failure.
 
@@ -355,8 +382,12 @@ slide-NN_slug.md prompts
                                         ▼                         ▼
                                   字幕时序＋OCR 坐标
                                         │
-                                        ▼
-                               带标注逐页片段 ──> 最终 MP4
+                         ┌──────────────┴───────────────┐
+                         ▼                              ▼
+                    归一化动画提示                 带标注逐页片段
+                                                        │
+                                                        ▼
+                                                     最终 MP4
 ```
 
 ### 设计不变量
@@ -365,7 +396,8 @@ slide-NN_slug.md prompts
 - 单页讲稿不会为了 TTS 被拆成任意句子片段。
 - GPU batch 只组合完整 slides，不改变 slide 边界。
 - 开始生成前，输入会复制到带时间戳的运行目录。
-- 长时间运行的 TTS 和视频报告会渐进写入，并最终标记为 `completed` 或 `failed`。
+- 长时间运行的 TTS 和视频报告会渐进写入。渲染运行最终标记为 `completed` 或
+  `failed`，视频规划 dry run 标记为 `planned`。
 - SHA-256 用于把派生产物绑定到确切源文件。
 - 生成媒体、模型、缓存和私有演示输入均被 Git 忽略。
 
@@ -472,8 +504,8 @@ Prompt 层提供两个确定性工具：
 - 声明时长与实测 WAV 时长一致。
 
 RapidOCR 从每张 slide 图片提取可见文字行和坐标框。每个加粗锚点会模糊匹配到一个或多个
-OCR 文字行。匹配成功后转换为下划线坐标框；匹配失败的锚点会作为 unresolved anchors
-保留在报告中。
+OCR 文字行。匹配成功后会分别转换为锚点文字框和下划线框；匹配失败的锚点会作为
+unresolved anchors 保留下来。
 
 锚点时序有两种来源：
 
@@ -481,6 +513,22 @@ OCR 文字行。匹配成功后转换为下划线坐标框；匹配失败的锚�
 2. 如果匹配失败，则使用锚点字符位置在该页讲稿中的相对比例。
 
 回退策略让字幕对齐不完整时仍可继续渲染，同时在报告中保留时序来源和匹配分数。
+
+同一次规划还会写出格式为 `oratordeck.anchor-animation-cues.v1` 的
+`anchor-animation-cues.json`。其数据契约为：
+
+- 每张 slide 保留从 1 开始的演示页号；
+- 每张 slide 记录源图片尺寸与 SHA-256；
+- 每个锚点通过 `appearance_order` 保留其在该页讲稿中从 1 开始的出现次序；
+- `position` 是匹配到的锚点文字整体包围框；
+- 锚点跨越多行时，`fragments` 保留各行的独立包围框；
+- 每个框都使用 0–1 闭区间内的归一化 `x`、`y`、`width`、`height`、`center_x`
+  和 `center_y`；
+- 坐标原点是源 slide 图片左上角，x 向右增大，y 向下增大；
+- 未定位锚点仍按原次序保留，`position` 为 `null`，且没有 fragments。
+
+动画提示文件和审计报告会在 FFmpeg 启动前写出。因此 `--dry-run` 可以只执行 OCR 规划
+并生成这两份 JSON，而不编码视频。
 
 ### 阶段 5：渲染与合并
 
@@ -501,8 +549,9 @@ OCR 文字行。匹配成功后转换为下划线坐标框；匹配失败的锚�
 - 总时长与 slide 数量；
 - resolved 与 unresolved 锚点数量；
 - 字幕时序与比例回退时序的锚点数量；
-- 每页 OCR 文字、锚点分数、时序、坐标框和片段路径；
-- `rendering`、`completed` 或 `failed` 状态。
+- 动画提示产物路径；
+- 每页 OCR 文字、锚点分数、时序、文字/下划线坐标框和片段路径；
+- `planned`、`rendering`、`completed` 或 `failed` 状态。
 
 ### 带时间戳的工作流
 
@@ -531,6 +580,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   └── my-talk.lrc
 ├── video/
 │   ├── clips/
+│   ├── anchor-animation-cues.json
 │   ├── anchor-video-report.json
 │   └── my-talk.mp4
 └── workflow.log
@@ -585,6 +635,7 @@ python /path/to/skill-creator/scripts/quick_validate.py \
 - prompt、图片、讲稿、WAV 和片段数量一致；
 - 最终 WAV、字幕结束时间、报告时长和 MP4 时长一致；
 - 最终 MP4 包含 H.264 视频与 AAC 音频；
+- 动画提示和视频报告中的 slide/anchor 数量一致；
 - 人工检查时间误差和 unresolved anchors；
 - `workflow.log` 中没有 traceback 或显存不足错误。
 

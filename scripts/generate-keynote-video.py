@@ -6,7 +6,8 @@ report supplies one indivisible WAV per slide. Optional SRT/VTT captions give
 the preferred anchor timing; otherwise timing is estimated from each anchor's
 position in the spoken slide text. RapidOCR locates the corresponding visual
 wording, and the bundled imageio-ffmpeg executable renders one clip per slide
-before concatenating the clips.
+before concatenating the clips. The OCR plan also produces a slide-animation
+cue file with narration order and normalized anchor text positions.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from PIL import Image
 CHUNK_FORMAT = "oratordeck.speaker-notes-chunks.v1"
 TIMING_FORMAT = "oratordeck.keynote-timing-report.v1"
 REPORT_FORMAT = "oratordeck.anchor-video-report.v1"
+ANIMATION_CUES_FORMAT = "oratordeck.anchor-animation-cues.v1"
 IMAGE_RE = re.compile(r"^slide-(\d+)(?:[_-].*)?\.(?:png|jpe?g|webp)$", re.IGNORECASE)
 WORD_RE = re.compile(r"[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*")
 TAG_RE = re.compile(r"<[^>]+>")
@@ -389,12 +391,11 @@ def match_ocr_anchor(
     }
 
 
-def underline_boxes(
+def anchor_text_boxes(
     anchor_text: str,
     matched_lines: list[OCRLine],
     image_width: int,
     image_height: int,
-    thickness: int,
 ) -> list[dict]:
     anchor_words = [token.value for token in text_tokens(anchor_text)]
     flattened = [
@@ -422,17 +423,170 @@ def underline_boxes(
             selected_x2 = x1 + (x2 - x1) * last_token.end_char / line_length
         else:
             selected_x1, selected_x2 = x1, x2
-        underline_y = min(image_height - thickness, y2 + max(3, round((y2 - y1) * 0.12)))
+
+        left = min(max(0, round(selected_x1)), image_width - 1)
+        right = min(image_width, max(left + 1, round(selected_x2)))
+        top = min(max(0, round(y1)), image_height - 1)
+        bottom = min(image_height, max(top + 1, round(y2)))
         boxes.append(
             {
-                "x": max(0, round(selected_x1)),
-                "y": max(0, round(underline_y)),
-                "width": max(4, min(image_width, round(selected_x2)) - max(0, round(selected_x1))),
-                "height": thickness,
+                "x": left,
+                "y": top,
+                "width": right - left,
+                "height": bottom - top,
                 "ocr_text": line.text,
             }
         )
     return boxes
+
+
+def underline_boxes(
+    text_boxes: list[dict],
+    image_width: int,
+    image_height: int,
+    thickness: int,
+) -> list[dict]:
+    boxes = []
+    for text_box in text_boxes:
+        text_bottom = text_box["y"] + text_box["height"]
+        underline_y = min(
+            image_height - thickness,
+            text_bottom + max(3, round(text_box["height"] * 0.12)),
+        )
+        boxes.append(
+            {
+                "x": text_box["x"],
+                "y": max(0, underline_y),
+                "width": max(
+                    4,
+                    min(image_width, text_box["x"] + text_box["width"])
+                    - text_box["x"],
+                ),
+                "height": thickness,
+                "ocr_text": text_box["ocr_text"],
+            }
+        )
+    return boxes
+
+
+def normalized_box(
+    box: dict,
+    image_width: int,
+    image_height: int,
+) -> dict[str, float]:
+    left = min(image_width, max(0.0, float(box["x"])))
+    top = min(image_height, max(0.0, float(box["y"])))
+    right = min(
+        image_width,
+        max(left, float(box["x"]) + float(box["width"])),
+    )
+    bottom = min(
+        image_height,
+        max(top, float(box["y"]) + float(box["height"])),
+    )
+    return {
+        "x": round(left / image_width, 6),
+        "y": round(top / image_height, 6),
+        "width": round((right - left) / image_width, 6),
+        "height": round((bottom - top) / image_height, 6),
+        "center_x": round((left + right) / (2 * image_width), 6),
+        "center_y": round((top + bottom) / (2 * image_height), 6),
+    }
+
+
+def normalized_anchor_geometry(
+    text_boxes: list[dict],
+    image_width: int,
+    image_height: int,
+) -> tuple[dict[str, float] | None, list[dict[str, float]]]:
+    if not text_boxes:
+        return None, []
+    left = min(box["x"] for box in text_boxes)
+    top = min(box["y"] for box in text_boxes)
+    right = max(box["x"] + box["width"] for box in text_boxes)
+    bottom = max(box["y"] + box["height"] for box in text_boxes)
+    position = normalized_box(
+        {
+            "x": left,
+            "y": top,
+            "width": right - left,
+            "height": bottom - top,
+        },
+        image_width,
+        image_height,
+    )
+    fragments = [
+        normalized_box(box, image_width, image_height)
+        for box in text_boxes
+    ]
+    return position, fragments
+
+
+def build_animation_cues(
+    slide_plans: list[dict],
+    chunks_path: Path,
+    images_dir: Path,
+) -> dict:
+    slides = []
+    anchor_count = 0
+    resolved_anchor_count = 0
+    for slide_plan in slide_plans:
+        image_width, image_height = slide_plan["image_size"]
+        anchors = []
+        for appearance_order, anchor in enumerate(slide_plan["anchors"], start=1):
+            anchor_count += 1
+            position, fragments = normalized_anchor_geometry(
+                anchor["text_boxes"],
+                image_width,
+                image_height,
+            )
+            if position is not None:
+                resolved_anchor_count += 1
+            anchors.append(
+                {
+                    "id": anchor["id"],
+                    "text": anchor["text"],
+                    "appearance_order": appearance_order,
+                    "status": "resolved" if position is not None else "unresolved",
+                    "position": position,
+                    "fragments": fragments,
+                }
+            )
+        slides.append(
+            {
+                "slide_number": slide_plan["slide"],
+                "chunk_id": slide_plan["id"],
+                "title": slide_plan["title"],
+                "image_path": slide_plan["image_path"],
+                "image_sha256": hashlib.sha256(
+                    Path(slide_plan["image_path"]).read_bytes()
+                ).hexdigest(),
+                "image_size_pixels": {
+                    "width": image_width,
+                    "height": image_height,
+                },
+                "anchors": anchors,
+            }
+        )
+    return {
+        "format": ANIMATION_CUES_FORMAT,
+        "coordinate_space": {
+            "reference": "source_slide_image",
+            "origin": "top_left",
+            "x_axis": "left_to_right",
+            "y_axis": "top_to_bottom",
+            "units": "normalized_0_to_1",
+            "box_fields": ["x", "y", "width", "height", "center_x", "center_y"],
+        },
+        "chunks_file": str(chunks_path),
+        "chunks_sha256": hashlib.sha256(chunks_path.read_bytes()).hexdigest(),
+        "images_dir": str(images_dir),
+        "slide_count": len(slides),
+        "anchor_count": anchor_count,
+        "resolved_anchor_count": resolved_anchor_count,
+        "unresolved_anchor_count": anchor_count - resolved_anchor_count,
+        "slides": slides,
+    }
 
 
 def ffmpeg_color(value: str) -> str:
@@ -570,7 +724,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("images_dir", type=Path)
     parser.add_argument("--subtitles", type=Path, help="Optional matching SRT or VTT")
     parser.add_argument("--output", type=Path, help="Final MP4 path")
-    parser.add_argument("--work-dir", type=Path, help="Per-slide clips and audit report")
+    parser.add_argument(
+        "--work-dir",
+        type=Path,
+        help="Per-slide clips, audit report, and animation cues",
+    )
+    parser.add_argument(
+        "--animation-cues-output",
+        type=Path,
+        help="Normalized anchor positions for slide animation tooling",
+    )
     parser.add_argument("--limit", type=int, help="Process only the first N generated slides")
     parser.add_argument("--fps", type=int, default=30)
     parser.add_argument("--ocr-confidence", type=float, default=0.55)
@@ -579,7 +742,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--underline-color", default="#FF6B00")
     parser.add_argument("--underline-thickness", type=int, default=7)
     parser.add_argument("--min-underline-seconds", type=float, default=0.65)
-    parser.add_argument("--dry-run", action="store_true", help="Plan OCR/timing without FFmpeg")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Write the OCR/timing plan without running FFmpeg",
+    )
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
 
@@ -627,12 +794,25 @@ def main() -> int:
         else work_dir / f"{timing_path.stem}.mp4"
     )
     report_path = work_dir / "anchor-video-report.json"
+    animation_cues_path = (
+        args.animation_cues_output.resolve()
+        if args.animation_cues_output
+        else work_dir / "anchor-animation-cues.json"
+    )
+    all_output_paths = [output_path, report_path, animation_cues_path]
+    if len(set(all_output_paths)) != len(all_output_paths):
+        raise RuntimeError(
+            "Output video, audit report, and animation-cue paths must be distinct"
+        )
+    output_paths = [report_path, animation_cues_path]
+    if not args.dry_run:
+        output_paths.append(output_path)
     existing = [
         path
-        for path in (output_path, report_path)
+        for path in output_paths
         if path.exists()
     ]
-    if existing and not args.overwrite and not args.dry_run:
+    if existing and not args.overwrite:
         raise RuntimeError(
             f"Output already exists: {', '.join(str(path) for path in existing)}; "
             "pass --overwrite"
@@ -702,9 +882,14 @@ def main() -> int:
             )
             if ocr_match:
                 resolved_anchors += 1
-                boxes = underline_boxes(
+                text_boxes = anchor_text_boxes(
                     anchor["text"],
                     ocr_match["lines"],
+                    image_width,
+                    image_height,
+                )
+                boxes = underline_boxes(
+                    text_boxes,
                     image_width,
                     image_height,
                     args.underline_thickness,
@@ -712,6 +897,7 @@ def main() -> int:
                 ocr_score = ocr_match["score"]
                 ocr_text = " ".join(line.text for line in ocr_match["lines"])
             else:
+                text_boxes = []
                 boxes = []
                 ocr_score = None
                 ocr_text = None
@@ -732,6 +918,7 @@ def main() -> int:
                         round(ocr_score, 6) if ocr_score is not None else None
                     ),
                     "ocr_text": ocr_text,
+                    "text_boxes": text_boxes,
                     "underline_boxes": boxes,
                 }
             )
@@ -782,6 +969,7 @@ def main() -> int:
         "subtitles": str(subtitle_path) if subtitle_path else None,
         "subtitle_timing_available": bool(subtitle_word_timing),
         "output_video": str(output_path),
+        "anchor_animation_cues": str(animation_cues_path),
         "fps": args.fps,
         "underline_color": args.underline_color,
         "underline_thickness": args.underline_thickness,
@@ -794,17 +982,25 @@ def main() -> int:
         "proportional_timed_anchor_count": total_anchors - subtitle_timed_anchors,
         "slides": slide_plans,
     }
+    animation_cues = build_animation_cues(
+        slide_plans,
+        chunks_path,
+        images_dir,
+    )
     print(
         f"Plan: {len(slide_plans)} slides, OCR resolved "
         f"{resolved_anchors}/{total_anchors} anchors; subtitle timing "
         f"{subtitle_timed_anchors}/{total_anchors}.",
         flush=True,
     )
-    if args.dry_run:
-        return 0
-
     work_dir.mkdir(parents=True, exist_ok=True)
     write_json(report_path, audit_report)
+    write_json(animation_cues_path, animation_cues)
+    if args.dry_run:
+        print(f"Audit report: {report_path}")
+        print(f"Animation cues: {animation_cues_path}")
+        return 0
+
     ffmpeg = get_ffmpeg_exe()
     color = ffmpeg_color(args.underline_color)
     clip_paths = []
@@ -838,6 +1034,7 @@ def main() -> int:
 
     print(f"Video: {output_path}")
     print(f"Audit report: {report_path}")
+    print(f"Animation cues: {animation_cues_path}")
     return 0
 
 
