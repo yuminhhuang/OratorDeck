@@ -14,12 +14,12 @@ start with the main [README](../README.md).
 
 OratorDeck has two layers:
 
-1. The optional prompt-first skill turns authoritative per-slide Markdown
+1. The optional OratorDeck skill turns authoritative per-slide Markdown
    prompts into aligned slide images and speaker notes.
 2. The standalone media pipeline turns aligned images and notes into audio,
    subtitles, annotated slide clips, and a final MP4.
 
-The core runtime does not consume prompt files. Prompt-first authoring is a
+The core runtime does not consume prompt files. Skill-assisted authoring is a
 source-generation layer that produces the core runtime's two inputs.
 
 ```text
@@ -63,10 +63,10 @@ slide-NN_slug.md prompts
 - Generated media, models, caches, and private presentation inputs are ignored
   by Git.
 
-### Stage 0: prompt-first authoring
+### Stage 0: skill-assisted authoring
 
 The installable skill is located at
-`skills/oratordeck-prompt-first/`.
+`skills/oratordeck/`.
 
 Each `slide-NN_slug.md` source contains:
 
@@ -80,7 +80,7 @@ The prompt layer provides two deterministic tools:
 
 - `build_prompt_manifest.py` extracts prompts in slide order and records the
   target PNG path, visible-text manifest, and source SHA-256.
-- `audit_prompt_first_deck.py` checks prompt numbering and structure, optional
+- `audit_slide_assets.py` checks prompt numbering and structure, optional
   image coverage and aspect ratios, speaker-note timing, anchor correspondence,
   anchor gaps, and expected speaking pace.
 
@@ -257,7 +257,7 @@ examples/demo/          synthetic public smoke-test inputs
 patches/                pinned Voicebox batch API patch
 resources/              local presentation inputs
 scripts/                formatter, TTS, subtitles, video, and workflow entrypoints
-skills/                 installable prompt-first skill
+skills/                 installable OratorDeck authoring skill
 tests/                  deterministic unit and contract tests
 ```
 
@@ -277,7 +277,7 @@ Validate the skill package:
 
 ```bash
 python /path/to/skill-creator/scripts/quick_validate.py \
-  skills/oratordeck-prompt-first
+  skills/oratordeck
 ```
 
 Run the public source smoke test:
@@ -324,12 +324,12 @@ hashing, progressive reports, and explicit quality failures.
 
 OratorDeck 分为两层：
 
-1. 可选的 prompt-first skill 把权威的逐页 Markdown prompts 转换为相互一致的 slide
+1. 可选的 OratorDeck skill 把权威的逐页 Markdown prompts 转换为相互一致的 slide
    图片和讲稿。
 2. 独立媒体流水线把已经对齐的图片与讲稿转换为音频、字幕、带标注的逐页片段和最终
    MP4。
 
-核心运行时不直接读取 prompt 文件。Prompt-first 创作层负责生成核心运行时所需的两份
+核心运行时不直接读取 prompt 文件。Skill 辅助创作层负责生成核心运行时所需的两份
 输入。
 
 ```text
@@ -369,9 +369,9 @@ slide-NN_slug.md prompts
 - SHA-256 用于把派生产物绑定到确切源文件。
 - 生成媒体、模型、缓存和私有演示输入均被 Git 忽略。
 
-### 阶段 0：Prompt-first 创作
+### 阶段 0：Skill 辅助创作
 
-可安装 skill 位于 `skills/oratordeck-prompt-first/`。
+可安装 skill 位于 `skills/oratordeck/`。
 
 每份 `slide-NN_slug.md` 包含：
 
@@ -385,7 +385,7 @@ Prompt 层提供两个确定性工具：
 
 - `build_prompt_manifest.py` 按 slide 顺序提取 prompts，记录目标 PNG 路径、可见文字清单
   和源文件 SHA-256。
-- `audit_prompt_first_deck.py` 检查 prompt 编号与结构、可选的图片覆盖和宽高比、讲稿时间、
+- `audit_slide_assets.py` 检查 prompt 编号与结构、可选的图片覆盖和宽高比、讲稿时间、
   锚点对应关系、锚点间隔与预期语速。
 
 图片生成本身交给具有图片生成能力的 agent。讲稿从同一组 prompts 推导，使加粗语音锚点
@@ -544,7 +544,7 @@ examples/demo/          公开合成 smoke-test 输入
 patches/                固定版本的 Voicebox batch API 补丁
 resources/              本地演示输入
 scripts/                格式化、TTS、字幕、视频和工作流入口
-skills/                 可安装的 prompt-first skill
+skills/                 可安装的 OratorDeck 创作 skill
 tests/                  确定性单元测试和契约测试
 ```
 
@@ -563,7 +563,7 @@ tests/                  确定性单元测试和契约测试
 
 ```bash
 python /path/to/skill-creator/scripts/quick_validate.py \
-  skills/oratordeck-prompt-first
+  skills/oratordeck
 ```
 
 运行公开源文件 smoke test：

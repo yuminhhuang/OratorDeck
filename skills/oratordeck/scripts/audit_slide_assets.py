@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit prompt-first slide sources, generated images, and synchronized notes."""
+"""Audit prompt-defined slide sources, generated images, and synchronized notes."""
 
 from __future__ import annotations
 
@@ -510,7 +510,7 @@ def audit(args: argparse.Namespace) -> dict:
     average_wpm = round(total_words / (total_seconds / 60.0), 1) if total_seconds else None
 
     return {
-        "format": "oratordeck-prompt-first-audit-v1",
+        "format": "oratordeck-slide-assets-audit-v1",
         "prompts_dir": str(prompt_dir),
         "notes": str(notes_path) if notes_path else None,
         "images_dir": str(images_dir) if images_dir else None,
@@ -606,7 +606,7 @@ def print_human(report: dict) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit prompt-first Markdown sources and optional speaker notes/images."
+            "Audit prompt-defined Markdown sources and optional speaker notes/images."
         )
     )
     parser.add_argument("--prompts-dir", type=Path, required=True)

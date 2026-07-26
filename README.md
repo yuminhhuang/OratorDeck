@@ -21,9 +21,9 @@ presentation without manually recording and editing every slide.
 
 OratorDeck is intentionally split into two independent, composable parts:
 
-1. **Prompt-first authoring:** the optional skill turns per-slide prompts into
-   aligned slide images and synchronized speaker notes. It does not require the
-   local media runtime or a local GPU.
+1. **Skill-assisted authoring:** the optional `$oratordeck` skill turns
+   per-slide prompts into aligned slide images and synchronized speaker notes.
+   It does not require the local media runtime or a local GPU.
 2. **Standalone media generation:** the repository workflow turns prepared
    images and speaker notes into audio, subtitles, and the annotated video. It
    does not require the skill or an Agent once those inputs exist.
@@ -37,7 +37,7 @@ Use this quick guide:
 | Your main goal | Best starting point |
 | --- | --- |
 | Produce a long-form English presentation from aligned slide images and speaker notes, with visible phrases underlined as they are spoken | **OratorDeck** |
-| Create prompt-defined slide images and synchronized notes now, then generate media later or on another device | The optional **OratorDeck prompt-first skill** |
+| Create prompt-defined slide images and synchronized notes now, then generate media later or on another device | The optional **OratorDeck skill** |
 | Build and manually refine a native, editable PPTX through a GUI or an Agent | [Presenton](https://github.com/presenton/presenton) or [PPT Master](https://github.com/hugohe3/ppt-master) |
 | Turn a research-paper PDF directly into a short narrated research video with burned-in captions and region-based visual cues | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
 | Generate a presentation deck without needing narration or an annotated video | [Presenton](https://github.com/presenton/presenton), [PPT Master](https://github.com/hugohe3/ppt-master), or [PPTAgent](https://github.com/icip-cas/PPTAgent) |
@@ -51,8 +51,8 @@ and its subtitles are separate files rather than burned into the video.
 
 These tools are not mutually exclusive. You can author a deck elsewhere, then
 export its slide images and adapt its notes to OratorDeck's input contract.
-Likewise, a device without a local GPU can use only OratorDeck's prompt-first
-authoring half.
+Likewise, a device without a local GPU can use only OratorDeck's
+skill-assisted authoring half.
 
 ### Option 1: Start from per-slide prompts
 
@@ -72,18 +72,18 @@ visible wording. If you only have an outline, the skill can help write these
 prompts first.
 
 Install the
-[`oratordeck-prompt-first`](skills/oratordeck-prompt-first) skill from:
+[`oratordeck`](skills/oratordeck) skill from:
 
 ```text
-https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
+https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck
 ```
 
 For images and speaker notes only—even on a device without a local GPU—ask
 Codex:
 
 ```text
-Use $oratordeck-prompt-first with my per-slide prompts to generate the slide
-images and synchronized English speaker notes.
+Use $oratordeck with my per-slide prompts to generate the slide images and
+synchronized English speaker notes.
 ```
 
 The skill stops after preparing and auditing the prompts, matching images, and
@@ -288,8 +288,8 @@ OratorDeck 通过生成带视觉锚点下划线的演讲视频，并同时提供
 
 OratorDeck 刻意分为两个相互独立、又可组合使用的部分：
 
-1. **Prompt-first 创作：**可选 skill 把逐页 prompts 转换为相互对齐的 slide 图片和同步
-   讲稿，不要求本地媒体环境或本地 GPU。
+1. **Skill 辅助创作：**可选的 `$oratordeck` skill 把逐页 prompts 转换为相互对齐的
+   slide 图片和同步讲稿，不要求本地媒体环境或本地 GPU。
 2. **独立媒体生成：**仓库工作流把准备好的图片和讲稿转换为音频、字幕和标注视频。输入
    准备好后，这一部分不要求 skill 或 Agent。
 
@@ -302,7 +302,7 @@ OratorDeck 刻意分为两个相互独立、又可组合使用的部分：
 | 你的主要目标 | 更合适的起点 |
 | --- | --- |
 | 使用相互对齐的 slide 图片和讲稿制作长篇英文演讲，并在读到可见短语时为其添加下划线 | **OratorDeck** |
-| 现在用 prompts 创建 slide 图片和同步讲稿，稍后或换一台设备再生成媒体 | 可选的 **OratorDeck prompt-first skill** |
+| 现在用 prompts 创建 slide 图片和同步讲稿，稍后或换一台设备再生成媒体 | 可选的 **OratorDeck skill** |
 | 通过 GUI 或 Agent 制作并手工调整原生、可编辑的 PPTX | [Presenton](https://github.com/presenton/presenton) 或 [PPT Master](https://github.com/hugohe3/ppt-master) |
 | 从研究论文 PDF 直接生成带烧录字幕和区域视觉提示的短篇研究视频 | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
 | 只需自动生成 presentation deck，不需要配音或标注视频 | [Presenton](https://github.com/presenton/presenton)、[PPT Master](https://github.com/hugohe3/ppt-master) 或 [PPTAgent](https://github.com/icip-cas/PPTAgent) |
@@ -313,7 +313,7 @@ OratorDeck 是专注于演讲视频的命令行工作流，不是通用 PowerPoi
 可编辑 PPTX，字幕也以独立文件提供，而不是烧录进视频。
 
 这些工具并不互斥。你可以在其他工具中制作 deck，再导出 slide 图片，并把讲稿整理为
-OratorDeck 的输入格式。没有本地 GPU 的设备也可以只使用 OratorDeck 的 prompt-first
+OratorDeck 的输入格式。没有本地 GPU 的设备也可以只使用 OratorDeck 的 Skill 辅助
 创作部分。
 
 ### 方式一：从逐页 prompts 开始
@@ -333,17 +333,17 @@ resources/
 skill 也可以先帮助你编写这些 prompts。
 
 从以下地址安装
-[`oratordeck-prompt-first`](skills/oratordeck-prompt-first) skill：
+[`oratordeck`](skills/oratordeck) skill：
 
 ```text
-https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
+https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck
 ```
 
 如果只需要图片和讲稿——即使设备没有本地 GPU——可以告诉 Codex：
 
 ```text
-Use $oratordeck-prompt-first with my per-slide prompts to generate the slide
-images and synchronized English speaker notes.
+Use $oratordeck with my per-slide prompts to generate the slide images and
+synchronized English speaker notes.
 ```
 
 skill 会在准备并审查 prompts、对应图片和讲稿后结束。它不会安装或运行 TTS、语音转录、

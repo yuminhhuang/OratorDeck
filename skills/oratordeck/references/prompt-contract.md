@@ -1,4 +1,4 @@
-# Prompt-First Slide Contract
+# Prompt-Defined Slide Contract
 
 Read this reference when creating or substantially revising prompt sources.
 
@@ -11,7 +11,7 @@ Read this reference when creating or substantially revising prompt sources.
 - Put every intended visible string exactly inside straight double quotes.
 - Treat rendered images and speaker notes as derivatives. They may later feed
   OratorDeck's independent media workflow, but that workflow is not part of
-  prompt-first authoring.
+  skill-assisted authoring.
 
 ## Recommended File Shape
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an ordered image-generation manifest from prompt-first slide sources."""
+"""Build an ordered image-generation manifest from prompt-defined slide sources."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import re
 import sys
 from pathlib import Path
 
-from audit_prompt_first_deck import (
+from audit_slide_assets import (
     QUOTED_RE,
     SLIDE_FILE_RE,
     SLIDE_TITLE_RE,
@@ -112,7 +112,7 @@ def build_manifest(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Extract ordered, self-contained image prompts from prompt-first slide Markdown."
+            "Extract ordered, self-contained image prompts from prompt-defined slide Markdown."
         )
     )
     parser.add_argument("prompts_dir", type=Path)

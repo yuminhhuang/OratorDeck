@@ -1,0 +1,4 @@
+interface:
+  display_name: "OratorDeck"
+  short_description: "Create aligned slide images and speaker notes"
+  default_prompt: "Use $oratordeck to turn my per-slide prompts into aligned slide images and synchronized speaker notes."

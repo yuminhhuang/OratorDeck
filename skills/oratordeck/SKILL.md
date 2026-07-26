@@ -1,9 +1,9 @@
 ---
-name: oratordeck-prompt-first
+name: oratordeck
 description: Create the authoring half of an OratorDeck presentation by helping users define self-contained Markdown slide prompts, generating one aligned slide image per prompt with an available image-generation capability, deriving synchronized speaker notes with target durations and bold visual anchors, and auditing the resulting assets. Use when a user wants to design slides from prompts, turn prepared slide prompts into images and speaker notes, keep slide visuals and speech aligned, or revise a prompt-defined presentation. The outputs are ready for OratorDeck's separate media workflow, but this skill does not require or run local TTS, transcription, OCR video rendering, CUDA, or the OratorDeck runtime.
 ---
 
-# OratorDeck Prompt-First
+# OratorDeck
 
 Treat each Markdown slide prompt as source code. Treat slide images, speaker
 notes, and their alignment as derivatives of those prompt sources.
@@ -96,7 +96,7 @@ contract must not otherwise depend on one image provider.
 Run a prompt-only audit before rendering:
 
 ```bash
-python "SKILL_DIR/scripts/audit_prompt_first_deck.py" --prompts-dir "ASSET_DIR" --strict
+python "SKILL_DIR/scripts/audit_slide_assets.py" --prompts-dir "ASSET_DIR" --strict
 ```
 
 Repair errors before continuing. Review warnings rather than weakening the
@@ -105,7 +105,7 @@ contract merely to silence them.
 Build an ordered generation manifest:
 
 ```bash
-python "SKILL_DIR/scripts/build_prompt_manifest.py" "ASSET_DIR" --output "ASSET_DIR/.prompt-first/PROMPT_MANIFEST.json" --overwrite
+python "SKILL_DIR/scripts/build_prompt_manifest.py" "ASSET_DIR" --output "ASSET_DIR/.oratordeck/PROMPT_MANIFEST.json" --overwrite
 ```
 
 Use this manifest to keep each fenced image prompt, intended output path,
@@ -138,7 +138,7 @@ final slides.
 Audit prompt/image coverage:
 
 ```bash
-python "SKILL_DIR/scripts/audit_prompt_first_deck.py" --prompts-dir "ASSET_DIR" --images-dir "ASSET_DIR/generated-images" --strict
+python "SKILL_DIR/scripts/audit_slide_assets.py" --prompts-dir "ASSET_DIR" --images-dir "ASSET_DIR/generated-images" --strict
 ```
 
 ## Phase 4: Derive Synchronized Speaker Notes
@@ -163,7 +163,7 @@ At a normal presentation pace, reconnect to a visible anchor roughly every
 Run the full source audit:
 
 ```bash
-python "SKILL_DIR/scripts/audit_prompt_first_deck.py" --prompts-dir "ASSET_DIR" --notes "ASSET_DIR/SPEAKER_NOTES.md" --images-dir "ASSET_DIR/generated-images" --min-anchors 1 --max-gap-words 40 --wpm-min 110 --wpm-max 150 --strict
+python "SKILL_DIR/scripts/audit_slide_assets.py" --prompts-dir "ASSET_DIR" --notes "ASSET_DIR/SPEAKER_NOTES.md" --images-dir "ASSET_DIR/generated-images" --min-anchors 1 --max-gap-words 40 --wpm-min 110 --wpm-max 150 --strict
 ```
 
 Perform a final human pass with bold formatting mentally removed. The speech

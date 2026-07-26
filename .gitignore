@@ -15,6 +15,7 @@ vendor/
 resources/SPEAKER_NOTES.md
 resources/slide-*.md
 resources/build-prompt-first-slides/
+resources/.oratordeck/
 resources/generated-images/*
 !resources/generated-images/.gitkeep
 

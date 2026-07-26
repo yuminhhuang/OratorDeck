@@ -16,8 +16,8 @@ matching slide image.
 
 Both private inputs are ignored by Git.
 
-For prompt-first authoring, install or invoke
-[`oratordeck-prompt-first`](../skills/oratordeck-prompt-first). It uses one
+For skill-assisted authoring, install or invoke
+[`oratordeck`](../skills/oratordeck). It uses one
 private `resources/slide-NN_slug.md` source per slide, then derives the images
 and `SPEAKER_NOTES.md` from those shared sources. Prompt sources matching
 `resources/slide-*.md` are also ignored by Git.

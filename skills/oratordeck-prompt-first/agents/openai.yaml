@@ -1,4 +1,0 @@
-interface:
-  display_name: "OratorDeck Prompt-First"
-  short_description: "Create aligned slide images and speaker notes"
-  default_prompt: "Use $oratordeck-prompt-first to turn my presentation brief into prompt-defined slide images and synchronized speaker notes."

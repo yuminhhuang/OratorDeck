@@ -10,17 +10,15 @@ from pathlib import Path
 
 from tests.helpers import PROJECT_DIR
 
-AUDITOR = (
-    PROJECT_DIR / "skills" / "oratordeck-prompt-first" / "scripts" / "audit_prompt_first_deck.py"
-)
+AUDITOR = PROJECT_DIR / "skills" / "oratordeck" / "scripts" / "audit_slide_assets.py"
 MANIFEST_BUILDER = (
-    PROJECT_DIR / "skills" / "oratordeck-prompt-first" / "scripts" / "build_prompt_manifest.py"
+    PROJECT_DIR / "skills" / "oratordeck" / "scripts" / "build_prompt_manifest.py"
 )
-SKILL_DIR = PROJECT_DIR / "skills" / "oratordeck-prompt-first"
+SKILL_DIR = PROJECT_DIR / "skills" / "oratordeck"
 
 
 def load_auditor_module():
-    module_name = "oratordeck_test_prompt_first_auditor"
+    module_name = "oratordeck_test_slide_assets_auditor"
     spec = importlib.util.spec_from_file_location(module_name, AUDITOR)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot load {AUDITOR}")
@@ -157,6 +155,7 @@ def test_audits_provider_specific_prompt_notes_and_image(tmp_path: Path) -> None
 
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout)
+    assert report["format"] == "oratordeck-slide-assets-audit-v1"
     assert report["summary"] == {
         "prompt_count": 1,
         "note_section_count": 1,
@@ -231,11 +230,13 @@ def test_skill_scope_stops_at_images_and_speaker_notes() -> None:
     )
     normalized_handoff = " ".join(handoff.split())
 
+    assert "name: oratordeck" in skill
     assert "This skill ends after it has produced and audited" in skill
     assert "outside this skill" in skill
     assert "Do not produce" in skill
     assert "does not need the skill at runtime" in normalized_handoff
     assert "Create aligned slide images and speaker notes" in interface
+    assert "Use $oratordeck " in interface
     assert "OratorDeck video" not in interface
     assert "./.venv/bin/python" not in bundled_markdown
     assert "--profile-name" not in bundled_markdown
@@ -266,8 +267,11 @@ def test_readme_presents_two_composable_halves() -> None:
     readme = (PROJECT_DIR / "README.md").read_text(encoding="utf-8")
 
     assert "two independent, composable parts" in readme
+    assert "[`oratordeck`](skills/oratordeck)" in readme
+    assert "Use $oratordeck with my per-slide prompts" in readme
     assert "The skill stops after preparing and auditing" in readme
     assert "Neither the skill nor an Agent" in readme
     assert "两个相互独立、又可组合使用的部分" in readme
     assert "skill 会停在图片和讲稿" in readme
+    assert "oratordeck-prompt-first" not in readme
     assert "images, synchronized English speaker notes, and final annotated video" not in readme
