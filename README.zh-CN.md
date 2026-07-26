@@ -38,16 +38,27 @@ OratorDeck 分为三个可以独立使用、也可以组合的模块：
                            仅 CPU/浏览器
 ```
 
-## 选择使用入口
+## OratorDeck 适合你吗？
 
-| 你已经准备好的内容 | 建议入口 |
+可以根据主要目标快速选择：
+
+| 你的主要目标 | 更合适的起点 |
 | --- | --- |
-| 逐页 prompts 或一份大纲 | 使用可选的 OratorDeck skill |
-| 相互匹配的 slide 图片和讲稿 | 直接运行媒体工作流 |
-| 需要审查的图片和讲稿，但没有 Agent 或 GPU | 只安装 Deck Verdict |
+| 使用相互对齐的 slide 图片和讲稿制作长篇英文演讲，并在读到可见短语时为其添加下划线 | **OratorDeck** |
+| 现在用 prompts 创建 slide 图片和同步讲稿，稍后或换一台设备再生成媒体 | 可选的 **OratorDeck skill** |
+| 不使用 Agent 或 GPU，审查图片与讲稿的一致性、加粗锚点、时间目标及锚点框 | 独立的 **OratorDeck Verdict** 包 |
+| 通过 GUI 或 Agent 制作并手工调整原生、可编辑的 PPTX | [Presenton](https://github.com/presenton/presenton) 或 [PPT Master](https://github.com/hugohe3/ppt-master) |
+| 从研究论文 PDF 直接生成带烧录字幕和区域视觉提示的短篇研究视频 | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
+| 只需自动生成 presentation deck，不需要配音或标注视频 | [Presenton](https://github.com/presenton/presenton)、[PPT Master](https://github.com/hugohe3/ppt-master) 或 [PPTAgent](https://github.com/icip-cas/PPTAgent) |
 
-完整本地媒体工作流目前面向 Python 3.11 和 NVIDIA CUDA GPU。没有本地 GPU 的设备仍然
-可以使用创作 skill 和 Deck Verdict。
+OratorDeck 是专注于演讲视频的命令行工作流，不是通用 PowerPoint 编辑器，也不是一键式
+论文摘要工具。当你重视长篇讲稿、逐页时间、独立字幕文件和精确文字锚点的控制时，它会
+比较合适。完整的本地媒体工作流目前面向 Python 3.11 和 NVIDIA CUDA GPU；它不会生成
+可编辑 PPTX，字幕也以独立文件提供，而不是烧录进视频。
+
+这些工具并不互斥。你可以在其他工具中制作 deck，再导出 slide 图片，并把讲稿整理为
+OratorDeck 的输入格式。没有本地 GPU 的设备可以使用创作 skill 和/或 Deck Verdict；
+没有 Agent 的 GPU 工作站则可以使用 Deck Verdict 与媒体生成。
 
 ## 方式一：从逐页 prompts 开始
 

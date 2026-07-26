@@ -45,17 +45,30 @@ per-slide prompts → images + speaker notes ───────────�
                                   CPU/browser only
 ```
 
-## Choose your starting point
+## Is OratorDeck right for you?
 
-| What you already have | Start here |
+Use this quick guide:
+
+| Your main goal | Best starting point |
 | --- | --- |
-| Per-slide prompts or an outline | Use the optional OratorDeck skill |
-| Matching slide images and speaker notes | Run the media workflow directly |
-| Images and notes that need review, but no Agent or GPU | Install only Deck Verdict |
+| Produce a long-form English presentation from aligned slide images and speaker notes, with visible phrases underlined as they are spoken | **OratorDeck** |
+| Create prompt-defined slide images and synchronized notes now, then generate media later or on another device | The optional **OratorDeck skill** |
+| Review slide–narration consistency, bold anchors, timing goals, and anchor boxes without an Agent or GPU | The standalone **OratorDeck Verdict** package |
+| Build and manually refine a native, editable PPTX through a GUI or an Agent | [Presenton](https://github.com/presenton/presenton) or [PPT Master](https://github.com/hugohe3/ppt-master) |
+| Turn a research-paper PDF directly into a short narrated research video with burned-in captions and region-based visual cues | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
+| Generate a presentation deck without needing narration or an annotated video | [Presenton](https://github.com/presenton/presenton), [PPT Master](https://github.com/hugohe3/ppt-master), or [PPTAgent](https://github.com/icip-cas/PPTAgent) |
 
-The complete local media workflow currently targets Python 3.11 and an NVIDIA
-CUDA GPU. Devices without a local GPU can still use the authoring skill and
-Deck Verdict.
+OratorDeck is a focused command-line workflow, not a general-purpose
+PowerPoint editor or one-click paper summarizer. It is a strong fit when you
+want precise control over long-form narration, slide timing, subtitle files,
+and exact text anchors. The full local media workflow is currently designed
+for Python 3.11 and an NVIDIA CUDA GPU; it does not produce an editable PPTX,
+and its subtitles are separate files rather than burned into the video.
+
+These tools are not mutually exclusive. You can author a deck elsewhere, then
+export its slide images and adapt its notes to OratorDeck's input contract. A
+device without a local GPU can use the authoring skill and/or Deck Verdict; a
+GPU workstation without an Agent can use Deck Verdict and media generation.
 
 ## Option 1: Start from per-slide prompts
 
