@@ -1,7 +1,7 @@
 # OratorDeck
 
-> Generate a narrated video with timed captions and underlined visual anchors,
-> so you can prepare a slide presentation faster.
+> Generate a narrated video with underlined visual anchors—plus separate,
+> matching timed subtitle files—so you can prepare a slide presentation faster.
 
 [English](#english) · [简体中文](#简体中文)
 
@@ -12,8 +12,9 @@
 ### What does OratorDeck do?
 
 OratorDeck turns a slide presentation into a complete narrated video. Each
-slide stays on screen while its narration plays, captions follow the speech,
-and important visible phrases are underlined at the moment they are spoken.
+slide stays on screen while its narration plays, and successfully located
+visible phrases are underlined at the moment they are spoken. Matching timed
+subtitles are delivered as separate SRT, WebVTT, and LRC files.
 
 The result is useful for rehearsing, reviewing, sharing, or publishing a
 presentation without manually recording and editing every slide.
@@ -91,8 +92,9 @@ Welcome to the presentation. We will begin with the **central question** and
 then build the evidence step by step.
 ```
 
-The bold phrase is spoken normally. If the same phrase is visible in the slide
-image, OratorDeck underlines it when it is spoken.
+The bold phrase is spoken normally. If the same phrase is visible and legible
+in the slide image, OratorDeck tries to locate and underline it when it is
+spoken. Any unresolved anchors are recorded in the run report.
 
 Slide numbers must be contiguous and agree across the notes and images.
 Supported image names include `slide-01.png`, `slide-01-opening.jpg`, and
@@ -100,7 +102,8 @@ Supported image names include `slide-01.png`, `slide-01-opening.jpg`, and
 
 ### Install the local runtime
 
-Python 3.11 and a CUDA-capable NVIDIA GPU are recommended.
+Python 3.11 and a CUDA-capable NVIDIA GPU are recommended. Git and
+[`just`](https://github.com/casey/just) are also required to prepare Voicebox.
 
 ```bash
 git clone https://github.com/yuminhhuang/OratorDeck.git
@@ -112,15 +115,16 @@ python3.11 -m venv .venv
 scripts/setup-voicebox.sh
 ```
 
-Follow the command printed by `setup-voicebox.sh`, create a Qwen CustomVoice
-profile in Voicebox, then start the local service:
+Follow the command printed by `setup-voicebox.sh` to install the Voicebox
+backend. Then start the local service:
 
 ```bash
 ORATORDECK_TTS_GPU=0 scripts/run-voicebox.sh
 ```
 
-See the [installation guide](docs/installation.md) for the complete Voicebox
-and voice-profile setup.
+With the service running, create a Qwen CustomVoice profile in Voicebox. See
+the [installation guide](docs/installation.md) for the complete Voicebox and
+voice-profile setup.
 
 ### Generate the video without the skill
 
@@ -137,6 +141,11 @@ Each run is saved in one timestamped directory:
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
+├── input/
+│   ├── SPEAKER_NOTES.md
+│   ├── SPEAKER_NOTES_CHUNKS.json
+│   ├── SPEAKER_NOTES_TTS.txt
+│   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
 │   ├── my-talk.timing.json
@@ -153,19 +162,21 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 ```
 
 The main deliverable is `video/my-talk.mp4`. You also receive the complete
-audio, subtitles, one audio/video file per slide, timing information, anchor
-results, and the full generation log.
+audio, separate subtitle files, one audio/video file per slide, a snapshot of
+the inputs, timing information, anchor results, and the full generation log.
 
 ### Current limitations
 
 - The production workflow currently targets English narration.
 - Slide backgrounds are static images; underlined anchors provide the visual
   emphasis.
+- Timed subtitles are separate SRT, WebVTT, and LRC files. They are not
+  currently burned into or embedded in the MP4.
 - An anchor can only be underlined when its text is visible and legible in the
   image.
 - Target durations are goals. The selected voice may speak faster or slower
   than requested.
-- Generated slides, narration, captions, and anchors should be reviewed before
+- Generated slides, narration, subtitles, and anchors should be reviewed before
   publication.
 - Model weights are downloaded separately and remain subject to their own
   licenses and terms.
@@ -222,9 +233,9 @@ model weights retain their own licenses and terms. See
 
 ### OratorDeck 能做什么？
 
-OratorDeck 通过生成带定时字幕和视觉锚点下划线的演讲视频，帮助你更快准备幻灯片演示。
-视频播放一张 slide 的讲稿时，会保持该 slide 作为背景；字幕跟随语音出现，并在读到重要
-可见短语时为其添加下划线。
+OratorDeck 通过生成带视觉锚点下划线的演讲视频，并同时提供匹配的定时字幕文件，帮助你
+更快准备幻灯片演示。视频播放一张 slide 的讲稿时，会保持该 slide 作为背景，并在读到
+成功定位的可见短语时为其添加下划线；定时字幕则以独立的 SRT、WebVTT 和 LRC 文件提供。
 
 这样的结果可用于演练、审阅、分享或发布演示，无需手工录制和剪辑每张 slide。
 
@@ -296,15 +307,16 @@ Welcome to the presentation. We will begin with the **central question** and
 then build the evidence step by step.
 ```
 
-加粗短语会被正常朗读。如果相同短语清晰显示在 slide 图片中，OratorDeck 会在读到它时
-添加下划线。
+加粗短语会被正常朗读。如果相同短语清晰显示在 slide 图片中，OratorDeck 会尝试定位并
+在读到它时添加下划线；无法定位的锚点仍会记录在运行报告中。
 
 讲稿和图片中的 slide 编号必须连续且一致。图片可以命名为 `slide-01.png`、
 `slide-01-opening.jpg` 或 `slide-01_opening.webp`。
 
 ### 安装本地运行环境
 
-建议使用 Python 3.11 和支持 CUDA 的 NVIDIA GPU。
+建议使用 Python 3.11 和支持 CUDA 的 NVIDIA GPU。准备 Voicebox 还需要 Git 和
+[`just`](https://github.com/casey/just)。
 
 ```bash
 git clone https://github.com/yuminhhuang/OratorDeck.git
@@ -316,14 +328,14 @@ python3.11 -m venv .venv
 scripts/setup-voicebox.sh
 ```
 
-按照 `setup-voicebox.sh` 输出的命令操作，在 Voicebox 中创建 Qwen CustomVoice profile，
-然后启动本地服务：
+按照 `setup-voicebox.sh` 输出的命令安装 Voicebox backend，然后启动本地服务：
 
 ```bash
 ORATORDECK_TTS_GPU=0 scripts/run-voicebox.sh
 ```
 
-完整的 Voicebox 和声音 profile 配置见[安装指南](docs/installation.md)。
+服务启动后，再在 Voicebox 中创建 Qwen CustomVoice profile。完整配置方式见
+[安装指南](docs/installation.md)。
 
 ### 不使用 skill 生成视频
 
@@ -340,6 +352,11 @@ scripts/generate-keynote-workflow.sh
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
+├── input/
+│   ├── SPEAKER_NOTES.md
+│   ├── SPEAKER_NOTES_CHUNKS.json
+│   ├── SPEAKER_NOTES_TTS.txt
+│   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
 │   ├── my-talk.timing.json
@@ -355,13 +372,14 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 └── workflow.log
 ```
 
-主要结果是 `video/my-talk.mp4`。此外还会得到完整音频、字幕、逐页音频和视频、时间信息、
-锚点结果以及完整生成日志。
+主要结果是 `video/my-talk.mp4`。此外还会得到完整音频、独立字幕文件、逐页音频和视频、
+输入快照、时间信息、锚点结果以及完整生成日志。
 
 ### 当前限制
 
 - 当前生产流程面向英文演讲。
 - Slide 背景是静态图片；下划线锚点用于提供视觉强调。
+- 定时字幕以独立的 SRT、WebVTT 和 LRC 文件提供，当前不会烧录或封装进 MP4。
 - 只有当锚点文字在图片中清晰可见时，才能准确添加下划线。
 - 预期时长是目标值；实际语速可能快于或慢于要求。
 - 发布前应人工检查生成的 slide、讲稿、字幕和锚点。
