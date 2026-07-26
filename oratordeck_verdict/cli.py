@@ -17,8 +17,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="oratordeck-verdict",
         description=(
-            "Prepare and apply OratorDeck's browser-based pre-TTS quality gate "
-            "without an Agent or GPU."
+            "Prepare and apply OratorDeck's browser-based pre-TTS review "
+            "checkpoint without an Agent or GPU."
         ),
     )
     parser.add_argument(

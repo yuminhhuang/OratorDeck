@@ -156,10 +156,10 @@ Then run:
 scripts/generate-keynote-workflow.sh
 ```
 
-On the first run, the default `review_before_tts=true` setting creates
-`resources/.oratordeck/deck-verdict.html` and the reusable
-`resources/.oratordeck/deck-ocr.json`, then exits before calling TTS. Run the
-printed state-bound editor command:
+The workflow creates `resources/.oratordeck/deck-verdict.html` and the reusable
+`resources/.oratordeck/deck-ocr.json`, starts the state-bound editor in the
+background by default, and continues directly into TTS. The same printed
+command can reopen it from another terminal:
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
@@ -167,15 +167,20 @@ printed state-bound editor command:
   resources/.oratordeck/deck-review.json
 ```
 
-Keep it running while you flip through the deck, edit the manuscript and bold
-anchors, and correct anchor rectangles. Save overwrites the fixed review JSON;
-Reset overwrites it with the generated initial state; refresh reloads it. Stop
-the editor with Ctrl+C when finished.
+You may ignore the panel or use the GPU wait time to flip through the deck,
+edit the manuscript and bold anchors, and correct anchor rectangles. Save
+overwrites the fixed review JSON; Reset overwrites it with the generated
+initial state; refresh reloads it.
 
-Run the workflow again. It validates the review and OCR intermediate against
-the exact note and image hashes before TTS, snapshots the reviewed inputs, and
-starts media generation. The final line prints the timestamped run directory;
-the MP4 and all intermediate artifacts are stored together below `data/runs/`.
+The review decision is deterministic per run. A review that existed when the
+workflow started is validated, snapshotted, and applied before TTS. If none
+existed, generation proceeds from the source inputs without waiting. Saving
+during that run does not mutate its snapshot; interrupt and rerun only when the
+corrections should replace the in-flight output. Set
+`open_pre_tts_verdict=false` to suppress automatic browser launch while still
+preparing the panel and printing its command. The final line prints the
+timestamped run directory; the MP4 and all intermediate artifacts are stored
+together below `data/runs/`.
 
 The media pass also writes a strictly box-only `video/anchor-verdict.html` with
 subtitle timing diagnostics. Narration and anchors are read-only. Open it with

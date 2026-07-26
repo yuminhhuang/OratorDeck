@@ -19,8 +19,8 @@ OratorDeck has three file-composable modules:
 2. The installable OratorDeck Verdict package uses CPU OCR and a self-contained
    browser editor to review aligned images, notes, anchors, timing goals, and
    normalized rectangles.
-3. The standalone media pipeline turns reviewed images and notes into audio,
-   subtitles, annotated slide clips, and a final MP4.
+3. The standalone media pipeline turns original or reviewed images and notes
+   into audio, subtitles, annotated slide clips, and a final MP4.
 
 The media runtime does not consume prompt files, and the Verdict package
 depends on neither the Agent layer nor the GPU media layer. SHA-bound files are
@@ -33,13 +33,13 @@ slide-NN_slug.md prompts
           │
           └──> synchronized note generation ─────────> SPEAKER_NOTES.md ──┤
                                                                           ▼
-                                    pre-TTS Deck Verdict
-                              (read-only image + editable notes,
-                               anchors, timing, and rectangles)
-                                                                          │
+                                          source inputs
+                               ┌─────────────────┴─────────────────┐
+                               ▼                                   ▼
+                  optional concurrent pre-TTS             slide-atomic formatting
+                         Deck Verdict                    and anchor extraction
+                  (saved for the next run)                         │
                                                                           ▼
-                              slide-atomic formatting and anchor extraction
-                                                                          │
                               ┌───────────────────────────────────────────┴──────────────┐
                               ▼                                                          ▼
                       batched slide TTS                                           bold anchor data
@@ -68,7 +68,9 @@ slide-NN_slug.md prompts
 - Narration for one slide is never split into arbitrary sentence fragments for
   TTS.
 - GPU batching groups complete slides without changing slide boundaries.
-- The default workflow requires a source-bound deck review before TTS.
+- The default workflow never waits for human review. It snapshots any
+  source-bound review that exists at launch and otherwise uses the source
+  inputs directly.
 - Inputs are copied into a timestamped run directory before generation.
 - Long-running TTS and video reports are written progressively. Rendering runs
   end in `completed` or `failed`; video-planning dry runs end in `planned`.
@@ -182,12 +184,16 @@ the reviewed `SPEAKER_NOTES.md`, `SPEAKER_NOTES_CHUNKS.json`,
 the handoff directory. This prevents manuscript, TTS text, anchor offsets,
 manually reviewed geometry, and image-bound OCR evidence from drifting apart.
 
-The workflow defaults to `review_before_tts=true`. When no review JSON exists,
-its first invocation creates the verdict and OCR intermediate, then exits
-before allocating a timestamped media run. After the reviewer saves the JSON,
-the next invocation validates both artifacts, snapshots them with the reviewed
-inputs, and proceeds to TTS. The gate can be explicitly disabled in the
-playground script.
+The workflow prepares the verdict and OCR intermediate, launches the editor
+server in the background by default, and immediately proceeds to media
+generation. Its review decision is frozen at process launch. An existing
+review is copied into the timestamped run, validated, and applied; without one,
+the run formats the source notes directly. A review saved concurrently is
+therefore never consumed halfway through a run. The user may ignore the panel,
+or review while GPU stages run and interrupt/restart when a correction should
+replace the current output. `open_pre_tts_verdict=false` disables automatic
+browser launch without disabling artifact preparation or the printed editor
+command.
 
 ### Stage 2: slide-atomic formatting
 
@@ -414,14 +420,15 @@ through `imageio-ffmpeg`.
 ### Timestamped workflow
 
 `scripts/generate-keynote-workflow.sh` is intentionally a transparent
-playground. Users edit its review gate, voice profile, GPU, batch size,
+playground. Users edit its Verdict launch preference, voice profile, GPU, batch size,
 tolerance, and run name directly.
 
-With the default gate enabled, the first invocation prepares the pre-TTS
-verdict plus `deck-ocr.json`, then exits. Once `deck-review.json` exists, the
-next invocation creates the timestamped run, validates and snapshots the
-current notes/images/review/OCR evidence, applies the review, and starts media
-generation. Standard output and standard error are captured in `workflow.log`.
+Every invocation creates a timestamped run and continues through media
+generation. It prepares the pre-TTS verdict plus `deck-ocr.json` when needed
+and starts the editor server in the background. If `deck-review.json` existed
+at launch, the workflow snapshots, validates, and applies it; otherwise it uses
+the source notes directly. Later saves are deferred to the next invocation.
+Standard output and standard error are captured in `workflow.log`.
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -429,9 +436,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   ├── SPEAKER_NOTES.md
 │   ├── SPEAKER_NOTES_CHUNKS.json
 │   ├── SPEAKER_NOTES_TTS.txt
-│   ├── deck-review.json
+│   ├── deck-review.json          # only when present at launch
 │   ├── deck-ocr.json
-│   ├── anchor-overrides.json
+│   ├── anchor-overrides.json     # only when that review was applied
 │   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
@@ -506,7 +513,8 @@ Production validation should additionally confirm:
 - final WAV, subtitle end, report duration, and MP4 duration agree;
 - the final MP4 has H.264 video and AAC audio;
 - cue and report slide/anchor counts agree;
-- every slide is accepted in the pre-TTS Deck Verdict;
+- when a reviewed result is required, every slide is accepted in the pre-TTS
+  Deck Verdict and that saved review is applied by a fresh run;
 - every orange/red item in the post-TTS `anchor-verdict.html` is reviewed;
 - timing misses and unresolved anchors are reviewed;
 - `workflow.log` contains no traceback or out-of-memory failure.
@@ -537,8 +545,8 @@ OratorDeck 分为三个通过文件组合的模块：
    图片和讲稿。
 2. 可安装的 OratorDeck Verdict 包使用 CPU OCR 和自包含浏览器编辑器审查图片、讲稿、
    锚点、时间目标与归一化矩形框。
-3. 独立媒体流水线把已经审校的图片与讲稿转换为音频、字幕、带标注的逐页片段和最终
-   MP4。
+3. 独立媒体流水线把原始或已经审校的图片与讲稿转换为音频、字幕、带标注的逐页片段和
+   最终 MP4。
 
 媒体运行时不直接读取 prompt 文件；Verdict 包既不依赖 Agent 层，也不依赖 GPU 媒体
 层。三个模块只通过带 SHA 绑定的普通文件交接。
@@ -550,13 +558,13 @@ slide-NN_slug.md prompts
           │
           └──> 同步讲稿生成 ────────────────> SPEAKER_NOTES.md ──┤
                                                                  ▼
-                                      TTS 前 Deck Verdict
-                               （图片只读；讲稿、锚点、时间和
-                                     矩形框可以编辑）
-                                                                 │
+                                           源输入
+                              ┌──────────────┴──────────────┐
+                              ▼                             ▼
+                    可选、并行的 TTS 前             逐页原子化格式与
+                       Deck Verdict                    锚点提取
+                   （保存供下一次 run 使用）                │
                                                                  ▼
-                                    逐页原子化格式与锚点提取
-                                                                 │
                           ┌──────────────────────────────────────┴────────────┐
                           ▼                                                   ▼
                     逐页批量 TTS                                         加粗锚点数据
@@ -583,7 +591,7 @@ slide-NN_slug.md prompts
 - 一张 slide 是创作、语音合成、时间控制、诊断和渲染的最小单位。
 - 单页讲稿不会为了 TTS 被拆成任意句子片段。
 - GPU batch 只组合完整 slides，不改变 slide 边界。
-- 默认工作流要求在 TTS 前完成与源文件绑定的 deck review。
+- 默认工作流不会等待人工审阅；启动时已有的源绑定 review 会被快照，否则直接使用源输入。
 - 开始生成前，输入会复制到带时间戳的运行目录。
 - 长时间运行的 TTS 和视频报告会渐进写入。渲染运行最终标记为 `completed` 或
   `failed`，视频规划 dry run 标记为 `planned`。
@@ -674,10 +682,12 @@ formatter 解析，并确认派生的锚点 ID 与文字和 review 完全一致�
 `--ocr-results` 时，它还会校验并把 `deck-ocr.json` 复制进交接目录。这样可以避免讲稿、
 TTS 文本、锚点 offset、人工矩形和图片绑定的 OCR 证据发生漂移。
 
-工作流默认 `review_before_tts=true`。当 review JSON 不存在时，第一次调用会生成 verdict
-和 OCR 中间产物，不会创建带时间戳的媒体 run；reviewer 保存 JSON 后，下一次调用校验
-两份产物、随已审输入一起做快照，再进入 TTS。用户可以在 playground 脚本中明确关闭
-这一 gate。
+工作流会准备 verdict 与 OCR 中间产物，默认在后台启动编辑服务，并立即继续媒体生成。
+Review 决定在进程启动时冻结：已有 review 会复制进带时间戳的 run，经校验和应用后再
+进入 TTS；没有 review 时则直接格式化源讲稿。并行审阅期间保存的 JSON 不会在运行中途
+被读入。用户可以忽略面板，也可以利用 GPU steps 的等待时间审阅；发现必要修正时再
+中断并重跑。`open_pre_tts_verdict=false` 只关闭自动浏览器启动，不会关闭产物准备或
+命令提示。
 
 ### 阶段 2：逐页原子化格式
 
@@ -872,12 +882,12 @@ fragment。Overrides 在全局 OCR 分配之后、几何 verdict、cues 和 FFmp
 ### 带时间戳的工作流
 
 `scripts/generate-keynote-workflow.sh` 刻意保持为透明的 playground。用户直接编辑
-review gate、声音 profile、GPU、batch size、时间容差和运行名称。
+Verdict 启动偏好、声音 profile、GPU、batch size、时间容差和运行名称。
 
-默认 gate 开启时，第一次调用会准备 TTS 前 verdict 和 `deck-ocr.json`，然后退出。
-`deck-review.json` 存在后，下一次调用才创建带时间戳的 run，在 TTS 前校验并复制当前
-讲稿、图片、review 和 OCR 证据，应用 review 并进入媒体生成。标准输出与错误输出统一
-写入 `workflow.log`。
+每次调用都会创建带时间戳的 run 并继续媒体生成。工作流会在需要时准备 TTS 前 verdict
+与 `deck-ocr.json`，并在后台启动编辑服务。如果启动时已有 `deck-review.json`，就会
+快照、校验并应用它；否则直接使用源讲稿。之后 Save 的修改会留到下一次调用。标准输出
+与错误输出统一写入 `workflow.log`。
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -885,9 +895,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   ├── SPEAKER_NOTES.md
 │   ├── SPEAKER_NOTES_CHUNKS.json
 │   ├── SPEAKER_NOTES_TTS.txt
-│   ├── deck-review.json
+│   ├── deck-review.json          # 仅启动时已存在才有
 │   ├── deck-ocr.json
-│   ├── anchor-overrides.json
+│   ├── anchor-overrides.json     # 仅应用上述 review 后才有
 │   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
@@ -961,7 +971,8 @@ python /path/to/skill-creator/scripts/quick_validate.py \
 - 最终 WAV、字幕结束时间、报告时长和 MP4 时长一致；
 - 最终 MP4 包含 H.264 视频与 AAC 音频；
 - 动画提示和视频报告中的 slide/anchor 数量一致；
-- 在 TTS 前 Deck Verdict 中逐页确认；
+- 当结果必须经过审校时，在 TTS 前 Deck Verdict 中逐页确认，并通过一次新的 run 应用
+  已保存 review；
 - 人工复核 TTS 后 `anchor-verdict.html` 中所有橙色/红色项目；
 - 人工检查时间误差和 unresolved anchors；
 - `workflow.log` 中没有 traceback 或显存不足错误。
