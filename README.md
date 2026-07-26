@@ -30,6 +30,30 @@ OratorDeck is intentionally split into two independent, composable parts:
 
 Use either part by itself, or run them in sequence.
 
+### Is OratorDeck right for you?
+
+Use this quick guide:
+
+| Your main goal | Best starting point |
+| --- | --- |
+| Produce a long-form English presentation from aligned slide images and speaker notes, with visible phrases underlined as they are spoken | **OratorDeck** |
+| Create prompt-defined slide images and synchronized notes now, then generate media later or on another device | The optional **OratorDeck prompt-first skill** |
+| Build and manually refine a native, editable PPTX through a GUI or an Agent | [Presenton](https://github.com/presenton/presenton) or [PPT Master](https://github.com/hugohe3/ppt-master) |
+| Turn a research-paper PDF directly into a short narrated research video with burned-in captions and region-based visual cues | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
+| Generate a presentation deck without needing narration or an annotated video | [Presenton](https://github.com/presenton/presenton), [PPT Master](https://github.com/hugohe3/ppt-master), or [PPTAgent](https://github.com/icip-cas/PPTAgent) |
+
+OratorDeck is a focused command-line workflow, not a general-purpose
+PowerPoint editor or one-click paper summarizer. It is a strong fit when you
+want precise control over long-form narration, slide timing, subtitle files,
+and exact text anchors. The full local media workflow is currently designed
+for Python 3.11 and an NVIDIA CUDA GPU; it does not produce an editable PPTX,
+and its subtitles are separate files rather than burned into the video.
+
+These tools are not mutually exclusive. You can author a deck elsewhere, then
+export its slide images and adapt its notes to OratorDeck's input contract.
+Likewise, a device without a local GPU can use only OratorDeck's prompt-first
+authoring half.
+
 ### Option 1: Start from per-slide prompts
 
 This is the easiest option when you are still preparing the presentation.
@@ -270,6 +294,27 @@ OratorDeck 刻意分为两个相互独立、又可组合使用的部分：
    准备好后，这一部分不要求 skill 或 Agent。
 
 你可以单独使用任意一部分，也可以依次串联使用。
+
+### OratorDeck 适合你吗？
+
+可以根据主要目标快速选择：
+
+| 你的主要目标 | 更合适的起点 |
+| --- | --- |
+| 使用相互对齐的 slide 图片和讲稿制作长篇英文演讲，并在读到可见短语时为其添加下划线 | **OratorDeck** |
+| 现在用 prompts 创建 slide 图片和同步讲稿，稍后或换一台设备再生成媒体 | 可选的 **OratorDeck prompt-first skill** |
+| 通过 GUI 或 Agent 制作并手工调整原生、可编辑的 PPTX | [Presenton](https://github.com/presenton/presenton) 或 [PPT Master](https://github.com/hugohe3/ppt-master) |
+| 从研究论文 PDF 直接生成带烧录字幕和区域视觉提示的短篇研究视频 | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
+| 只需自动生成 presentation deck，不需要配音或标注视频 | [Presenton](https://github.com/presenton/presenton)、[PPT Master](https://github.com/hugohe3/ppt-master) 或 [PPTAgent](https://github.com/icip-cas/PPTAgent) |
+
+OratorDeck 是专注于演讲视频的命令行工作流，不是通用 PowerPoint 编辑器，也不是一键式
+论文摘要工具。当你重视长篇讲稿、逐页时间、独立字幕文件和精确文字锚点的控制时，它会
+比较合适。完整的本地媒体工作流目前面向 Python 3.11 和 NVIDIA CUDA GPU；它不会生成
+可编辑 PPTX，字幕也以独立文件提供，而不是烧录进视频。
+
+这些工具并不互斥。你可以在其他工具中制作 deck，再导出 slide 图片，并把讲稿整理为
+OratorDeck 的输入格式。没有本地 GPU 的设备也可以只使用 OratorDeck 的 prompt-first
+创作部分。
 
 ### 方式一：从逐页 prompts 开始
 
