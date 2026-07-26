@@ -16,6 +16,28 @@ matching slide image.
 
 Both private inputs are ignored by Git.
 
+The default media workflow prepares
+`resources/.oratordeck/deck-verdict.html` plus
+`resources/.oratordeck/deck-ocr.json`, then stops before TTS. Review the slides,
+manuscript, bold anchors, and bounding boxes with the printed state-bound editor
+command, click Save to overwrite
+`resources/.oratordeck/deck-review.json`, and rerun the workflow. The OCR file
+stores raw text lines and coordinates bound to each source image by SHA-256;
+the video stage validates and reuses it rather than running OCR a second time.
+Changed images require regenerating the review artifacts. The entire
+`.oratordeck/` review workspace is private and ignored by Git.
+The panel deliberately has only **Save deck review** and **Reset**. It has no
+browser autosave, import, or downloaded-copy state: Save writes the bound JSON,
+Reset writes its generated initial state, and refresh reloads it.
+
+The same pre-TTS quality gate can be installed separately, without the skill,
+TTS stack, FFmpeg, or a GPU:
+
+```bash
+python -m pip install \
+  "oratordeck-verdict @ git+https://github.com/yuminhhuang/OratorDeck.git"
+```
+
 For skill-assisted authoring, install or invoke
 [`oratordeck`](../skills/oratordeck). It uses one
 private `resources/slide-NN_slug.md` source per slide, then derives the images

@@ -12,42 +12,50 @@ start with the main [README](../README.md).
 
 ### System boundaries
 
-OratorDeck has two layers:
+OratorDeck has three file-composable modules:
 
 1. The optional OratorDeck skill turns authoritative per-slide Markdown
    prompts into aligned slide images and speaker notes.
-2. The standalone media pipeline turns aligned images and notes into audio,
+2. The installable OratorDeck Verdict package uses CPU OCR and a self-contained
+   browser editor to review aligned images, notes, anchors, timing goals, and
+   normalized rectangles.
+3. The standalone media pipeline turns reviewed images and notes into audio,
    subtitles, annotated slide clips, and a final MP4.
 
-The core runtime does not consume prompt files. Skill-assisted authoring is a
-source-generation layer that produces the core runtime's two inputs.
+The media runtime does not consume prompt files, and the Verdict package
+depends on neither the Agent layer nor the GPU media layer. SHA-bound files are
+the only handoff between modules.
 
 ```text
 slide-NN_slug.md prompts
           │
-          ├──> prompt manifest ──> image generation ──> slide images
+          ├──> prompt manifest ──> image generation ──> slide images ──────┐
           │
-          └──> synchronized note generation ─────────> SPEAKER_NOTES.md
-                                                       │
-                                                       ▼
+          └──> synchronized note generation ─────────> SPEAKER_NOTES.md ──┤
+                                                                          ▼
+                                    pre-TTS Deck Verdict
+                              (read-only image + editable notes,
+                               anchors, timing, and rectangles)
+                                                                          │
+                                                                          ▼
                               slide-atomic formatting and anchor extraction
-                                                       │
-                     ┌─────────────────────────────────┴──────────────┐
-                     ▼                                                ▼
-             batched slide TTS                                bold anchor data
-                     │                                                │
-                     ├──> per-slide WAVs ──> joined WAV               │
-                     │                         │                       │
-                     │                         ▼                       │
-                     │                  Whisper subtitles              │
-                     │                         │                       │
-                     └──────── timing report ──┼───────────────────────┤
-                                               ▼                       ▼
+                                                                          │
+                              ┌───────────────────────────────────────────┴──────────────┐
+                              ▼                                                          ▼
+                      batched slide TTS                                           bold anchor data
+                              │                                                          │
+                              ├──> per-slide WAVs ──> joined WAV                         │
+                              │                         │                                 │
+                              │                         ▼                                 │
+                              │                  Whisper subtitles                        │
+                              │                         │                                 │
+                              └──────── timing report ──┼─────────────────────────────────┤
+                                                        ▼                                 ▼
                                        subtitle timing + OCR positions
                                                │
                               ┌────────────────┴─────────────────┐
                               ▼                                  ▼
-                    normalized animation cues       annotated slide clips
+                 animation cues + anchor verdict    annotated slide clips
                                                                   │
                                                                   ▼
                                                               final MP4
@@ -60,6 +68,7 @@ slide-NN_slug.md prompts
 - Narration for one slide is never split into arbitrary sentence fragments for
   TTS.
 - GPU batching groups complete slides without changing slide boundaries.
+- The default workflow requires a source-bound deck review before TTS.
 - Inputs are copied into a timestamped run directory before generation.
 - Long-running TTS and video reports are written progressively. Rendering runs
   end in `completed` or `failed`; video-planning dry runs end in `planned`.
@@ -93,7 +102,94 @@ are derived from the same prompts so that bold spoken anchors reuse visible
 slide wording. The resulting images and `SPEAKER_NOTES.md` then enter the core
 pipeline.
 
-### Stage 1: slide-atomic formatting
+### Stage 1: pre-TTS Deck Verdict
+
+The separately installable `oratordeck_verdict` package parses the notes,
+discovers the slide images, runs RapidOCR on CPU, and performs global per-slide
+anchor assignment. OCR parsing, text matching, candidate construction, and
+global assignment have one canonical implementation in
+`oratordeck_verdict/anchoring.py`; the video planner imports that module rather
+than maintaining a second implementation.
+
+The `oratordeck-verdict prepare` command writes a self-contained
+`resources/.oratordeck/deck-verdict.html` and an image-bound
+`resources/.oratordeck/deck-ocr.json`. Slide previews and all editor data are
+embedded in the HTML. Editing uses
+`oratordeck-verdict edit deck-verdict.html deck-review.json`, a loopback
+service with no additional dependencies, implemented in
+`oratordeck_verdict/state_server.py`. This is necessary because a `file://`
+page cannot safely overwrite one fixed local JSON file.
+
+The canonical shared editor in `oratordeck_verdict/editor.py` presents one
+slide at a time with a filmstrip and previous/next navigation. Repository
+scripts retain thin compatibility entry points. Slide pixels are read-only.
+The visual editing surface is deliberately limited to one normalized
+rectangular bounding box per anchor:
+
+- dragging inside the rectangle moves it as a unit;
+- four edge handles resize its top, right, bottom, or left boundary;
+- unresolved anchors can receive a new box;
+- an automatic box can be restored;
+- an underline can be explicitly suppressed.
+
+The inspector can edit the slide title, target time, and manuscript. Bold
+Markdown spans remain the anchor definition, so adding, removing, or rewriting
+`**anchor text**` updates the ordered anchor list. Diagnostics preserve the OCR
+score, anchor-word coverage, candidate count, review reasons, and—after
+subtitles exist—timing provenance.
+
+The bound state file uses `oratordeck.deck-review.v1`, containing:
+
+- the exact speaker-note SHA-256 and the SHA-256 of every slide image;
+- the ordered slide identity, title, target time, and reviewed manuscript;
+- the ordered anchor identity and text;
+- one normalized box and `auto`, `manual`, `suppress`, or `unresolved` state per
+  anchor.
+
+The editor deliberately exposes only explicit **Save deck review** and
+**Reset** actions. It has no import, browser autosave, or download-based state.
+On page load and refresh, the panel reads its one bound JSON. Save atomically
+overwrites that path; Reset atomically overwrites it with the generated initial
+document embedded in the HTML. Unsaved in-memory edits disappear on refresh.
+
+The state service listens only on `127.0.0.1`, exposes the page and state API
+under a random per-process capability path, disables HTTP caching, and
+validates the state format plus complete source fingerprint before reading or
+writing. Opening the HTML directly is read-only, so the UI cannot silently
+fall back to downloading a second, disconnected JSON.
+
+The separate OCR intermediate uses format `oratordeck.ocr-results.v1` and
+contains:
+
+- the OCR engine and the minimum score retained while creating the artifact;
+- one record per slide with image dimensions and exact image SHA-256;
+- raw OCR text, confidence, and axis-aligned pixel box for every retained line.
+
+It deliberately does not store final anchor assignments. The Verdict editor
+may change the manuscript and its bold anchors, so the video stage filters the
+cached lines at its requested confidence threshold and reruns the shared global
+assignment against the final reviewed chunks. This reuses OCR inference without
+freezing stale semantic decisions. The consumer validates the complete slide
+set, dimensions, and hashes; any changed image is a hard error and requires the
+pre stage to be regenerated.
+
+`oratordeck-verdict apply` rejects a review when either source changed,
+rebuilds Markdown, parses it through the package formatter, and verifies that
+the derived anchor IDs and text exactly equal the review. It atomically emits
+the reviewed `SPEAKER_NOTES.md`, `SPEAKER_NOTES_CHUNKS.json`,
+`SPEAKER_NOTES_TTS.txt`, and source-bound `anchor-overrides.json`. When
+`--ocr-results` is supplied, it also validates and copies `deck-ocr.json` into
+the handoff directory. This prevents manuscript, TTS text, anchor offsets,
+manually reviewed geometry, and image-bound OCR evidence from drifting apart.
+
+The workflow defaults to `review_before_tts=true`. When no review JSON exists,
+its first invocation creates the verdict and OCR intermediate, then exits
+before allocating a timestamped media run. After the reviewer saves the JSON,
+the next invocation validates both artifacts, snapshots them with the reviewed
+inputs, and proceeds to TTS. The gate can be explicitly disabled in the
+playground script.
+
+### Stage 2: slide-atomic formatting
 
 `scripts/format-speaker-notes-chunks.py` parses
 `resources/SPEAKER_NOTES.md`.
@@ -121,7 +217,7 @@ It writes `SPEAKER_NOTES_CHUNKS.json` with format identifier
 An optional `SPEAKER_NOTES_TTS.txt` is a plain-text rendering of the cleaned
 narration and serves as the subtitle correction reference.
 
-### Stage 2: batched TTS and duration control
+### Stage 3: batched TTS and duration control
 
 `scripts/generate-english-keynote.py` reads the chunk document and verifies its
 format, counts, timing totals, and source hash.
@@ -157,7 +253,7 @@ The timing report uses format
 Target duration is best-effort. The report exposes misses rather than hiding or
 time-stretching them.
 
-### Stage 3: subtitle generation and reference correction
+### Stage 4: subtitle generation and reference correction
 
 `scripts/generate-english-subtitles.py` loads a local Whisper model, transcribes
 the joined WAV in bounded windows, and writes SRT, WebVTT, and LRC.
@@ -171,7 +267,7 @@ of technical names.
 
 Model downloads are redirected into the OratorDeck checkout.
 
-### Stage 4: OCR anchor planning
+### Stage 5: OCR anchor planning
 
 `scripts/generate-keynote-video.py` verifies:
 
@@ -182,10 +278,31 @@ Model downloads are redirected into the OratorDeck checkout.
 - one image per narrated slide;
 - agreement between declared and measured WAV duration.
 
-RapidOCR extracts visible text lines and bounding boxes from each slide image.
-Each bold anchor is fuzzy-matched to one or more OCR lines. Successful matches
-are converted into anchor text boxes and separate underline boxes; unsuccessful
-matches are retained as unresolved anchors.
+The planner imports the shared OCR and anchoring implementation from
+`oratordeck_verdict/anchoring.py`. With `--ocr-results`, it verifies every
+current image against the cached SHA-256 and dimensions, loads the raw OCR
+lines, applies the requested confidence threshold, and does not import or
+instantiate RapidOCR. Without that option it runs RapidOCR live through the
+same module. The report records the OCR source plus the intermediate's path and
+SHA-256 when reused.
+
+Instead of committing each bold anchor to its best local match independently,
+the shared planner keeps up to eight spatially distinct candidates per anchor.
+A candidate's assignment quality combines fuzzy-text confidence (70%) and
+exact anchor-word coverage (30%).
+
+A bounded beam search then selects all anchors on a slide jointly. Candidate
+utility includes a small reading-order prior. Assignments that reuse at least
+half of another anchor's OCR tokens are incompatible unless one anchor's word
+sequence contains the other or the two anchors are identical. Identical anchors
+may reuse a location with a small penalty so distinct occurrences are preferred
+when available. This preserves intentional nested anchors while preventing
+unrelated anchors from silently claiming the same visual text. Matches selected
+away from their local first choice and candidates rejected by a global conflict
+remain explicit in the report.
+
+Successful assignments are converted into anchor text boxes and separate
+underline boxes; unsuccessful assignments remain unresolved.
 
 Anchor timing uses two strategies:
 
@@ -210,12 +327,64 @@ The same planning pass writes `anchor-animation-cues.json` using format
 - the coordinate origin is the source slide image's top-left corner, with x
   increasing rightward and y increasing downward;
 - unresolved anchors remain in order with `position: null` and no fragments.
+- intentionally suppressed anchors use `status: suppressed`; applied manual
+  geometry and its selection provenance remain attached as `manual_override`.
 
-The cue file and audit report are written before FFmpeg starts. `--dry-run`
-therefore performs OCR planning and produces both JSON artifacts without
-encoding video.
+`anchor-verdict.html` reuses the restricted slide editor after audio and
+subtitle generation. It embeds every slide, overlays numbered selected
+locations, and assigns every anchor one of four verdicts:
 
-### Stage 5: rendering and concatenation
+- `pass`: the assignment cleared all configured checks;
+- `corrected`: an accepted manual replacement or suppression is active;
+- `review`: the assignment has low OCR confidence, low anchor-word coverage,
+  spatially ambiguous candidates, a global reassignment, proportional timing,
+  unexpected anchor-box overlap, or out-of-bounds source geometry;
+- `unresolved`: no candidate passed or all candidates conflicted globally.
+
+The inspector preserves OCR confidence, anchor coverage, candidate count,
+timing provenance, and human-readable reasons. Default review thresholds are
+0.78 confidence, 0.65 coverage, and 0.04 candidate-quality margin.
+
+The post-TTS editor is deliberately box-only. The title, target time,
+manuscript, and ordered anchor text are read-only because changing any of them
+would invalidate the existing audio, subtitles, and timing map. The reviewer
+may move, resize, create, restore, or suppress bounding boxes, then save
+`oratordeck.anchor-overrides.v1` while reusing the existing audio/subtitles:
+
+- `source.chunks_sha256` binds the corrections to the exact chunk document;
+- `source.images[]` binds every processed slide number to its image SHA-256;
+- each override targets a unique `(slide, anchor_id)` pair;
+- `action: set` carries the normalized reviewed rectangle as one fragment;
+- `action: suppress` deliberately renders no underline;
+- optional `selection` metadata records the bounding-box editor as the source.
+
+The post-TTS editor likewise exposes only **Save box overrides** and **Reset**.
+It uses the same state service: Save overwrites its fixed
+`anchor-overrides.json`, Reset writes the generated initial override document,
+and refresh reloads that file. It keeps no browser-local or import state, so
+only this bound override JSON can affect rerendering.
+
+The renderer rejects stale sources, unknown or duplicate targets, non-finite
+coordinates, zero-area boxes, and any fragment outside the 0–1 slide bounds.
+Overrides are applied after global OCR assignment and before geometry verdicts,
+cue generation, and FFmpeg rendering. A previous report therefore provides a
+compact correction loop without repeating audio or subtitle work:
+
+```bash
+.venv/bin/python scripts/generate-keynote-video.py \
+  --rerender-from-report RUN/video/anchor-video-report.json \
+  --anchor-overrides RUN/video/anchor-overrides.json \
+  --overwrite
+```
+
+Semantic changes must be made in the pre-TTS Deck Verdict and followed by a new
+audio, subtitle, and video run.
+
+The cue file, verdict, and audit report are written before FFmpeg starts.
+`--dry-run` therefore performs the complete anchoring review without encoding
+video.
+
+### Stage 6: rendering and concatenation
 
 Each slide is rendered as a static-background H.264/AAC clip with:
 
@@ -233,21 +402,26 @@ through `imageio-ffmpeg`.
 - chunk SHA-256;
 - frame rate and underline settings;
 - total duration and slide count;
-- resolved and unresolved anchor counts;
+- resolved, suppressed, and unresolved anchor counts;
 - subtitle-timed and proportionally timed anchor counts;
-- the animation-cue artifact path;
-- per-slide OCR text, anchor scores, timing, text/underline boxes, and clip
-  paths;
+- animation-cue and anchor-verdict artifact paths;
+- override path/hash, applied action counts, and rerender source report;
+- global matching method, reassignment/sharing counts, and verdict summary;
+- per-slide OCR text, candidate diagnostics, verdict reasons, timing,
+  text/underline boxes, and clip paths;
 - `planned`, `rendering`, `completed`, or `failed` status.
 
 ### Timestamped workflow
 
 `scripts/generate-keynote-workflow.sh` is intentionally a transparent
-playground. Users edit its voice profile, GPU, batch size, tolerance, and run
-name directly.
+playground. Users edit its review gate, voice profile, GPU, batch size,
+tolerance, and run name directly.
 
-Before generation it snapshots the current notes and images. Standard output
-and standard error are captured in `workflow.log`.
+With the default gate enabled, the first invocation prepares the pre-TTS
+verdict plus `deck-ocr.json`, then exits. Once `deck-review.json` exists, the
+next invocation creates the timestamped run, validates and snapshots the
+current notes/images/review/OCR evidence, applies the review, and starts media
+generation. Standard output and standard error are captured in `workflow.log`.
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -255,6 +429,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   ├── SPEAKER_NOTES.md
 │   ├── SPEAKER_NOTES_CHUNKS.json
 │   ├── SPEAKER_NOTES_TTS.txt
+│   ├── deck-review.json
+│   ├── deck-ocr.json
+│   ├── anchor-overrides.json
 │   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
@@ -270,6 +447,8 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 ├── video/
 │   ├── clips/
 │   ├── anchor-animation-cues.json
+│   ├── anchor-verdict.html
+│   ├── anchor-overrides.json    # state-bound box review
 │   ├── anchor-video-report.json
 │   └── my-talk.mp4
 └── workflow.log
@@ -280,6 +459,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 ```text
 docs/                   user setup and technical architecture
 examples/demo/          synthetic public smoke-test inputs
+oratordeck_verdict/     installable Agent-free/GPU-free review package
 patches/                pinned Voicebox batch API patch
 resources/              local presentation inputs
 scripts/                formatter, TTS, subtitles, video, and workflow entrypoints
@@ -326,6 +506,8 @@ Production validation should additionally confirm:
 - final WAV, subtitle end, report duration, and MP4 duration agree;
 - the final MP4 has H.264 video and AAC audio;
 - cue and report slide/anchor counts agree;
+- every slide is accepted in the pre-TTS Deck Verdict;
+- every orange/red item in the post-TTS `anchor-verdict.html` is reviewed;
 - timing misses and unresolved anchors are reviewed;
 - `workflow.log` contains no traceback or out-of-memory failure.
 
@@ -349,42 +531,48 @@ hashing, progressive reports, and explicit quality failures.
 
 ### 系统边界
 
-OratorDeck 分为两层：
+OratorDeck 分为三个通过文件组合的模块：
 
 1. 可选的 OratorDeck skill 把权威的逐页 Markdown prompts 转换为相互一致的 slide
    图片和讲稿。
-2. 独立媒体流水线把已经对齐的图片与讲稿转换为音频、字幕、带标注的逐页片段和最终
+2. 可安装的 OratorDeck Verdict 包使用 CPU OCR 和自包含浏览器编辑器审查图片、讲稿、
+   锚点、时间目标与归一化矩形框。
+3. 独立媒体流水线把已经审校的图片与讲稿转换为音频、字幕、带标注的逐页片段和最终
    MP4。
 
-核心运行时不直接读取 prompt 文件。Skill 辅助创作层负责生成核心运行时所需的两份
-输入。
+媒体运行时不直接读取 prompt 文件；Verdict 包既不依赖 Agent 层，也不依赖 GPU 媒体
+层。三个模块只通过带 SHA 绑定的普通文件交接。
 
 ```text
 slide-NN_slug.md prompts
           │
-          ├──> prompt manifest ──> 图片生成 ──> slide 图片
+          ├──> prompt manifest ──> 图片生成 ──> slide 图片 ──────┐
           │
-          └──> 同步讲稿生成 ────────────────> SPEAKER_NOTES.md
-                                                   │
-                                                   ▼
+          └──> 同步讲稿生成 ────────────────> SPEAKER_NOTES.md ──┤
+                                                                 ▼
+                                      TTS 前 Deck Verdict
+                               （图片只读；讲稿、锚点、时间和
+                                     矩形框可以编辑）
+                                                                 │
+                                                                 ▼
                                     逐页原子化格式与锚点提取
-                                                   │
-                    ┌──────────────────────────────┴──────────────┐
-                    ▼                                             ▼
-              逐页批量 TTS                                  加粗锚点数据
-                    │                                             │
-                    ├──> 逐页 WAV ──> 完整 WAV                    │
-                    │                   │                         │
-                    │                   ▼                         │
-                    │              Whisper 字幕                    │
-                    │                   │                         │
-                    └────── 时间报告 ───┼─────────────────────────┤
-                                        ▼                         ▼
+                                                                 │
+                          ┌──────────────────────────────────────┴────────────┐
+                          ▼                                                   ▼
+                    逐页批量 TTS                                         加粗锚点数据
+                          │                                                   │
+                          ├──> 逐页 WAV ──> 完整 WAV                          │
+                          │                   │                               │
+                          │                   ▼                               │
+                          │              Whisper 字幕                          │
+                          │                   │                               │
+                          └────── 时间报告 ───┼───────────────────────────────┤
+                                              ▼                               ▼
                                   字幕时序＋OCR 坐标
                                         │
                          ┌──────────────┴───────────────┐
                          ▼                              ▼
-                    归一化动画提示                 带标注逐页片段
+                  动画提示＋锚点 verdict             带标注逐页片段
                                                         │
                                                         ▼
                                                      最终 MP4
@@ -395,6 +583,7 @@ slide-NN_slug.md prompts
 - 一张 slide 是创作、语音合成、时间控制、诊断和渲染的最小单位。
 - 单页讲稿不会为了 TTS 被拆成任意句子片段。
 - GPU batch 只组合完整 slides，不改变 slide 边界。
+- 默认工作流要求在 TTS 前完成与源文件绑定的 deck review。
 - 开始生成前，输入会复制到带时间戳的运行目录。
 - 长时间运行的 TTS 和视频报告会渐进写入。渲染运行最终标记为 `completed` 或
   `failed`，视频规划 dry run 标记为 `planned`。
@@ -423,7 +612,74 @@ Prompt 层提供两个确定性工具：
 图片生成本身交给具有图片生成能力的 agent。讲稿从同一组 prompts 推导，使加粗语音锚点
 复用 slide 中的可见文字。生成的图片和 `SPEAKER_NOTES.md` 随后进入核心流水线。
 
-### 阶段 1：逐页原子化格式
+### 阶段 1：TTS 前 Deck Verdict
+
+可单独安装的 `oratordeck_verdict` 包会解析讲稿、发现逐页图片、在 CPU 上运行
+RapidOCR，并执行逐页全局锚点分配。OCR 解析、文字匹配、候选构造和全局分配只有一份
+权威实现：`oratordeck_verdict/anchoring.py`。视频规划器直接导入该模块，不再维护第二套
+实现。
+
+`oratordeck-verdict prepare` 命令输出自包含的
+`resources/.oratordeck/deck-verdict.html`，以及与图片绑定的
+`resources/.oratordeck/deck-ocr.json`。Slide 预览和全部编辑数据都嵌入 HTML。编辑时
+使用 `oratordeck-verdict edit deck-verdict.html deck-review.json`；这是由
+`oratordeck_verdict/state_server.py` 实现、不增加额外依赖的 loopback 服务。之所以需要
+它，是因为 `file://` 页面无法安全覆写一个固定的本地 JSON 文件。
+
+`oratordeck_verdict/editor.py` 是共用编辑器的权威实现：一次显示一页，并提供左侧
+filmstrip 和前后翻页；仓库脚本保留轻量兼容入口。Slide 图片像素保持只读；视觉编辑被
+刻意限制为每个锚点一个归一化矩形框：
+
+- 拖动框内部可整体移动；
+- 四个边缘 handle 分别调整上、右、下、左边界；
+- unresolved 锚点可以新建框；
+- 可以恢复自动 OCR 框；
+- 可以明确 suppress 不需要的下划线。
+
+Inspector 可以编辑 slide 标题、预期时间和讲稿。Markdown 加粗区域仍是锚点定义，因此
+新增、删除或改写 `**anchor text**` 会同步更新有序锚点清单。诊断信息保留 OCR 分数、
+锚点单词覆盖率、候选数量和 review 原因；字幕存在后还会显示时序来源。
+
+绑定的状态文件使用 `oratordeck.deck-review.v1`，其中包含：
+
+- 准确的讲稿 SHA-256 和每张 slide 图片的 SHA-256；
+- 有序 slide identity、标题、预期时间和已审讲稿；
+- 有序锚点 identity 和文字；
+- 每个锚点的一个归一化框，以及 `auto`、`manual`、`suppress` 或 `unresolved` 状态。
+
+编辑器刻意只提供显式的 **Save deck review** 与 **Reset**。它没有 import、浏览器
+自动保存或下载式状态。页面打开和刷新时都会读取唯一绑定的 JSON；Save 原子化覆写该
+路径，Reset 则用 HTML 内嵌的生成时初始文档原子化覆写它。未保存的内存修改会在刷新时
+丢失。
+
+状态服务只监听 `127.0.0.1`，把页面和状态 API 放在每次进程随机生成的 capability
+路径下，关闭 HTTP 缓存，并在读写前校验状态格式和完整源指纹。直接打开 HTML 时页面
+保持只读，因此不会静默退化成下载第二份、彼此脱节的 JSON。
+
+独立 OCR 中间产物的格式为 `oratordeck.ocr-results.v1`，包含：
+
+- OCR 引擎，以及创建产物时保留的最低分数；
+- 每张 slide 的图片尺寸和准确 SHA-256；
+- 每条被保留 OCR 文字行的原文、置信度和轴对齐像素框。
+
+它刻意不保存最终锚点分配。Verdict 编辑器可能修改讲稿和其中的加粗锚点，因此视频阶段会
+按自身要求的置信度过滤缓存文字行，再针对最终已审 chunks 重新运行共用的全局分配。这样
+既复用 OCR 推理，也不会固化已经过期的语义决策。消费方会检查完整 slide 集合、尺寸和
+哈希；任何图片变化都会触发硬错误，要求重新运行 pre 阶段。
+
+`oratordeck-verdict apply` 会在任一源文件变化时拒绝 review，重建 Markdown，交给包内
+formatter 解析，并确认派生的锚点 ID 与文字和 review 完全一致。随后它原子化输出
+已审 `SPEAKER_NOTES.md`、`SPEAKER_NOTES_CHUNKS.json`、
+`SPEAKER_NOTES_TTS.txt` 和与源文件绑定的 `anchor-overrides.json`。提供
+`--ocr-results` 时，它还会校验并把 `deck-ocr.json` 复制进交接目录。这样可以避免讲稿、
+TTS 文本、锚点 offset、人工矩形和图片绑定的 OCR 证据发生漂移。
+
+工作流默认 `review_before_tts=true`。当 review JSON 不存在时，第一次调用会生成 verdict
+和 OCR 中间产物，不会创建带时间戳的媒体 run；reviewer 保存 JSON 后，下一次调用校验
+两份产物、随已审输入一起做快照，再进入 TTS。用户可以在 playground 脚本中明确关闭
+这一 gate。
+
+### 阶段 2：逐页原子化格式
 
 `scripts/format-speaker-notes-chunks.py` 解析
 `resources/SPEAKER_NOTES.md`。
@@ -449,7 +705,7 @@ Prompt 层提供两个确定性工具：
 
 可选的 `SPEAKER_NOTES_TTS.txt` 是清理后讲稿的纯文本版本，也作为字幕校对参考。
 
-### 阶段 2：批量 TTS 与时长控制
+### 阶段 3：批量 TTS 与时长控制
 
 `scripts/generate-english-keynote.py` 读取 chunk 文档，并检查格式、数量、总时长和源文件
 哈希。
@@ -481,7 +737,7 @@ Prompt 层提供两个确定性工具：
 
 目标时长是尽力满足的目标。报告会暴露未命中情况，而不是隐藏误差或强行变速。
 
-### 阶段 3：字幕生成与参考校正
+### 阶段 4：字幕生成与参考校正
 
 `scripts/generate-english-subtitles.py` 加载本地 Whisper 模型，在有界窗口内转录完整 WAV，
 并输出 SRT、WebVTT 和 LRC。
@@ -492,7 +748,7 @@ Prompt 层提供两个确定性工具：
 
 模型下载会重定向到 OratorDeck checkout 内。
 
-### 阶段 4：OCR 锚点规划
+### 阶段 5：OCR 锚点规划
 
 `scripts/generate-keynote-video.py` 会检查：
 
@@ -503,9 +759,23 @@ Prompt 层提供两个确定性工具：
 - 每张有讲稿的 slide 恰好对应一张图片；
 - 声明时长与实测 WAV 时长一致。
 
-RapidOCR 从每张 slide 图片提取可见文字行和坐标框。每个加粗锚点会模糊匹配到一个或多个
-OCR 文字行。匹配成功后会分别转换为锚点文字框和下划线框；匹配失败的锚点会作为
-unresolved anchors 保留下来。
+规划器导入 `oratordeck_verdict/anchoring.py` 中共用的 OCR 与锚定实现。提供
+`--ocr-results` 时，它会用缓存的 SHA-256 和尺寸逐张校验当前图片，读取原始 OCR 文字行，
+再按所需置信度过滤，并且不会导入或实例化 RapidOCR；没有该参数时则通过同一模块实时运行
+RapidOCR。报告会记录 OCR 来源；复用中间产物时还会记录它的路径和 SHA-256。
+
+每个加粗锚点会模糊匹配到一个或多个 OCR 文字行。共用规划器不会让每个锚点独立采用局部
+最高分，而是为每个锚点保留至多八个空间位置不同的候选。候选的分配质量由模糊文字置信度
+（70%）和精确锚点单词覆盖率（30%）共同组成。
+
+随后使用有界 beam search 联合选择整页锚点，并加入轻量 reading-order 先验。如果两个
+候选复用了至少一半 OCR tokens，除非一个锚点的单词序列包含另一个，或两者文字完全
+相同，否则不能同时选择。完全相同的锚点可以复用位置，但会受到轻微惩罚，以便在存在
+多个实例时优先选择不同位置。这样既保留刻意设计的嵌套锚点，也避免无关锚点悄悄占用
+同一段视觉文字。未采用局部第一候选的全局改派，以及因全局冲突被拒绝的候选，都会明确
+记录在报告中。
+
+成功分配会分别转换为锚点文字框和下划线框；失败项会保留为 unresolved。
 
 锚点时序有两种来源：
 
@@ -526,11 +796,55 @@ unresolved anchors 保留下来。
   和 `center_y`；
 - 坐标原点是源 slide 图片左上角，x 向右增大，y 向下增大；
 - 未定位锚点仍按原次序保留，`position` 为 `null`，且没有 fragments。
+- 主动关闭的锚点使用 `status: suppressed`；人工位置及其选择来源保存在
+  `manual_override` 中。
 
-动画提示文件和审计报告会在 FFmpeg 启动前写出。因此 `--dry-run` 可以只执行 OCR 规划
-并生成这两份 JSON，而不编码视频。
+`anchor-verdict.html` 会在音频与字幕生成后复用同一个受限 slide 编辑器。它嵌入每张
+slide、叠加带编号的位置，并为每个锚点给出四种 verdict：
 
-### 阶段 5：渲染与合并
+- `pass`：通过全部自动检查；
+- `corrected`：已经接受人工替换位置或 suppress 决策；
+- `review`：存在低 OCR 置信度、低锚点单词覆盖率、空间候选歧义、全局改派、
+  比例时序、意外的锚点框重叠或源几何越界；
+- `unresolved`：没有合格候选，或所有候选都发生全局冲突。
+
+Inspector 保留 OCR 置信度、锚点覆盖率、候选数量、时序来源和可读原因。默认复核阈值
+为 0.78 置信度、0.65 覆盖率和 0.04 候选质量分差。
+
+TTS 后编辑器被严格限制为 box-only。标题、预期时间、讲稿和有序锚点文字均为只读，
+因为任一变化都会使已有音频、字幕和时序映射失效。Reviewer 只能移动、缩放、新建、
+恢复或 suppress bounding box，然后保存 `oratordeck.anchor-overrides.v1`，继续复用已有
+音频和字幕：
+
+- `source.chunks_sha256` 将修正绑定到准确的 chunks 文档；
+- `source.images[]` 将每个页号绑定到对应图片的 SHA-256；
+- 每条 override 唯一定位 `(slide, anchor_id)`；
+- `action: set` 把已审归一化矩形作为一个 fragment；
+- `action: suppress` 明确表示不渲染下划线；
+- 可选的 `selection` 元数据记录修改来自 bounding-box editor。
+
+TTS 后编辑器同样只提供 **Save box overrides** 与 **Reset**，并复用同一状态服务：
+Save 覆写固定的 `anchor-overrides.json`，Reset 写回生成时的初始 override 文档，刷新
+则重新读取该文件。它不维护浏览器本地草稿或 import 状态，因此只有这份绑定的 override
+JSON 能影响重渲染。
+
+渲染器会拒绝过期输入、未知或重复目标、非有限坐标、零面积框以及任何超出 0–1 边界的
+fragment。Overrides 在全局 OCR 分配之后、几何 verdict、cues 和 FFmpeg 渲染之前应用。
+因此可以从上一次报告直接完成修正闭环，无需重复音频与字幕阶段：
+
+```bash
+.venv/bin/python scripts/generate-keynote-video.py \
+  --rerender-from-report RUN/video/anchor-video-report.json \
+  --anchor-overrides RUN/video/anchor-overrides.json \
+  --overwrite
+```
+
+语义变化必须在 TTS 前 Deck Verdict 中完成，然后重新生成音频、字幕和视频。
+
+动画提示、verdict 和审计报告都会在 FFmpeg 启动前写出。因此 `--dry-run` 可以完成整套
+锚定复核而不编码视频。
+
+### 阶段 6：渲染与合并
 
 每张 slide 会被渲染为静态背景的 H.264/AAC 片段，并包含：
 
@@ -547,18 +861,23 @@ unresolved anchors 保留下来。
 - chunk SHA-256；
 - 帧率与下划线设置；
 - 总时长与 slide 数量；
-- resolved 与 unresolved 锚点数量；
+- resolved、suppressed 与 unresolved 锚点数量；
 - 字幕时序与比例回退时序的锚点数量；
-- 动画提示产物路径；
-- 每页 OCR 文字、锚点分数、时序、文字/下划线坐标框和片段路径；
+- 动画提示和锚点 verdict 产物路径；
+- override 路径/哈希、已应用 action 数量和重渲染来源报告；
+- 全局匹配方法、改派/共享数量和 verdict 汇总；
+- 每页 OCR 文字、候选诊断、verdict 原因、时序、文字/下划线坐标框和片段路径；
 - `planned`、`rendering`、`completed` 或 `failed` 状态。
 
 ### 带时间戳的工作流
 
-`scripts/generate-keynote-workflow.sh` 刻意保持为透明的 playground。用户直接编辑声音
-profile、GPU、batch size、时间容差和运行名称。
+`scripts/generate-keynote-workflow.sh` 刻意保持为透明的 playground。用户直接编辑
+review gate、声音 profile、GPU、batch size、时间容差和运行名称。
 
-开始生成前，它会复制当前讲稿和图片。标准输出与错误输出统一写入 `workflow.log`。
+默认 gate 开启时，第一次调用会准备 TTS 前 verdict 和 `deck-ocr.json`，然后退出。
+`deck-review.json` 存在后，下一次调用才创建带时间戳的 run，在 TTS 前校验并复制当前
+讲稿、图片、review 和 OCR 证据，应用 review 并进入媒体生成。标准输出与错误输出统一
+写入 `workflow.log`。
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -566,6 +885,9 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 │   ├── SPEAKER_NOTES.md
 │   ├── SPEAKER_NOTES_CHUNKS.json
 │   ├── SPEAKER_NOTES_TTS.txt
+│   ├── deck-review.json
+│   ├── deck-ocr.json
+│   ├── anchor-overrides.json
 │   └── generated-images/
 ├── audio/
 │   ├── my-talk.wav
@@ -581,6 +903,8 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 ├── video/
 │   ├── clips/
 │   ├── anchor-animation-cues.json
+│   ├── anchor-verdict.html
+│   ├── anchor-overrides.json    # 状态绑定的 box review
 │   ├── anchor-video-report.json
 │   └── my-talk.mp4
 └── workflow.log
@@ -591,6 +915,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 ```text
 docs/                   用户安装与技术架构
 examples/demo/          公开合成 smoke-test 输入
+oratordeck_verdict/     可安装、无需 Agent/GPU 的审校包
 patches/                固定版本的 Voicebox batch API 补丁
 resources/              本地演示输入
 scripts/                格式化、TTS、字幕、视频和工作流入口
@@ -636,6 +961,8 @@ python /path/to/skill-creator/scripts/quick_validate.py \
 - 最终 WAV、字幕结束时间、报告时长和 MP4 时长一致；
 - 最终 MP4 包含 H.264 视频与 AAC 音频；
 - 动画提示和视频报告中的 slide/anchor 数量一致；
+- 在 TTS 前 Deck Verdict 中逐页确认；
+- 人工复核 TTS 后 `anchor-verdict.html` 中所有橙色/红色项目；
 - 人工检查时间误差和 unresolved anchors；
 - `workflow.log` 中没有 traceback 或显存不足错误。
 

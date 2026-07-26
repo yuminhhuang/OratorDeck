@@ -4,6 +4,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ruff_cache/
+build/
+dist/
+*.egg-info/
 
 # Local models, caches, and temporary files
 models/

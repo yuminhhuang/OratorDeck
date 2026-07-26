@@ -29,14 +29,20 @@ jobs:
             "imageio-ffmpeg>=0.5,<1"
 
       - name: Lint
-        run: python -m ruff check scripts tests
+        run: python -m ruff check oratordeck_verdict scripts tests
 
       - name: Test
         run: python -m pytest -q
 
+      - name: Validate standalone Verdict package
+        run: |
+          python -m pip install --no-deps .
+          oratordeck-verdict --version
+          oratordeck-verdict --help
+
       - name: Check executable syntax
         run: |
-          python -m compileall -q scripts tests
+          python -m compileall -q oratordeck_verdict scripts tests
           for script in scripts/*.sh; do
             bash -n "$script"
           done

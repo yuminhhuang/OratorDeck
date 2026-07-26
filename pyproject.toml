@@ -1,3 +1,40 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oratordeck-verdict"
+version = "0.1.0"
+description = "Agent-free, GPU-free slide, manuscript, and anchor review for OratorDeck"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [
+  { name = "OratorDeck contributors" },
+]
+dependencies = [
+  "Pillow>=10,<13",
+  "rapidocr>=3.4,<4",
+  "onnxruntime>=1.17,<2",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Multimedia :: Graphics :: Presentation",
+]
+
+[project.scripts]
+oratordeck-verdict = "oratordeck_verdict.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yuminhhuang/OratorDeck"
+Repository = "https://github.com/yuminhhuang/OratorDeck"
+Issues = "https://github.com/yuminhhuang/OratorDeck/issues"
+
+[tool.setuptools.packages.find]
+include = ["oratordeck_verdict*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
