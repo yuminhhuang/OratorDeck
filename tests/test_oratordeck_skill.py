@@ -263,15 +263,23 @@ def test_reads_supported_image_dimensions_with_standard_library(tmp_path: Path) 
     assert auditor.image_dimensions(webp) == (1920, 1080)
 
 
-def test_readme_presents_two_composable_halves() -> None:
+def test_readmes_present_two_composable_halves_with_language_switching() -> None:
     readme = (PROJECT_DIR / "README.md").read_text(encoding="utf-8")
+    readme_zh = (PROJECT_DIR / "README.zh-CN.md").read_text(encoding="utf-8")
 
+    assert "[English](README.md) · [简体中文](README.zh-CN.md)" in readme
+    assert "[English](README.md) · [简体中文](README.zh-CN.md)" in readme_zh
+    assert "docs/assets/oratordeck-final-effect.png" in readme
+    assert "docs/assets/oratordeck-final-effect.png" in readme_zh
     assert "two independent, composable parts" in readme
     assert "[`oratordeck`](skills/oratordeck)" in readme
     assert "Use $oratordeck with my per-slide prompts" in readme
     assert "The skill stops after preparing and auditing" in readme
     assert "Neither the skill nor an Agent" in readme
-    assert "两个相互独立、又可组合使用的部分" in readme
-    assert "skill 会停在图片和讲稿" in readme
+    assert "## OratorDeck 能做什么？" not in readme
+    assert "两个相互独立、又可组合使用的部分" in readme_zh
+    assert "skill 会停在图片和讲稿" in readme_zh
+    assert "## What does OratorDeck do?" not in readme_zh
     assert "oratordeck-prompt-first" not in readme
+    assert "oratordeck-prompt-first" not in readme_zh
     assert "images, synchronized English speaker notes, and final annotated video" not in readme
