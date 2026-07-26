@@ -1,11 +1,11 @@
-# OratorDeck Handoff
+# Optional OratorDeck Handoff
 
-Read this reference before running the TTS, subtitle, annotation, and video
-pipeline.
+Read this reference when the user wants OratorDeck-ready assets or explicitly
+asks the agent to continue from those assets to a final video.
 
-## Repository Inputs
+## Asset Contract
 
-From the OratorDeck root, prepare:
+Place completed assets in an OratorDeck checkout as:
 
 ```text
 resources/
@@ -19,105 +19,43 @@ resources/
     └── ...
 ```
 
-Prompt files are authoritative sources. OratorDeck's runtime currently consumes
-the notes and images. The prompt audit bridges those two layers before media
-generation.
+The prompt files remain the authoritative sources. The prompt-first skill
+produces and audits all files above. OratorDeck's standalone media workflow
+consumes `SPEAKER_NOTES.md` and `generated-images/`; it does not need the skill
+at runtime.
 
-Private prompt sources, `SPEAKER_NOTES.md`, generated images, models, caches,
-and `data/runs/` should remain untracked unless the user explicitly chooses to
-publish them.
+## Boundary
 
-## Environment Preflight
+End the skill successfully when the prompt, image, and note counts agree, the
+asset audit passes, and remaining review items have been reported. Do not make
+skill completion depend on:
 
-Read `docs/installation.md`. Confirm:
+- an OratorDeck checkout;
+- a particular operating system;
+- a local GPU or CUDA;
+- Voicebox, TTS, Whisper, OCR, or FFmpeg;
+- generated audio, subtitles, clips, reports, or MP4 files.
 
-- Python 3.11 and all `requirements.txt` dependencies are available;
-- the pinned Voicebox backend patch is applied;
-- the selected CUDA GPU is visible outside any restricted sandbox;
-- Voicebox responds at the URL used by the workflow;
-- the exact Qwen CustomVoice profile exists;
-- available disk space covers slide images, model caches, per-slide audio,
-  clips, and the final video.
+This separation is intentional:
 
-Do not substitute an arbitrary profile or CPU inference without telling the
-user.
+- A device with an Agent and image-generation capability can create the
+  authoring assets without a local media GPU.
+- A device without an Agent can consume manually prepared images and notes with
+  OratorDeck's standalone media workflow.
+- A device with both capabilities can compose the two halves.
 
-## Deterministic Source Checks
+## Explicit Follow-On
 
-Run the skill audit first:
+If the user explicitly requested final media and the current workspace is an
+OratorDeck checkout with its media runtime already prepared:
 
-```bash
-./.venv/bin/python \
-  <skill-dir>/scripts/audit_prompt_first_deck.py \
-  --prompts-dir resources \
-  --notes resources/SPEAKER_NOTES.md \
-  --images-dir resources/generated-images \
-  --strict
-```
+1. finish and report the skill's asset audit;
+2. read the repository `README.md` and `docs/installation.md`;
+3. treat `scripts/generate-keynote-workflow.sh` as a separate follow-on
+   operation outside this skill;
+4. preserve the repository's timestamped run layout and validation rules.
 
-The prompt manifest used for image generation should also be retained under
-`.tmp/prompt-first/`:
-
-```bash
-./.venv/bin/python \
-  <skill-dir>/scripts/build_prompt_manifest.py \
-  resources \
-  --output .tmp/prompt-first/PROMPT_MANIFEST.json \
-  --overwrite
-```
-
-Then check OratorDeck's exact runtime parser:
-
-```bash
-mkdir -p .tmp/prompt-first
-
-./.venv/bin/python scripts/format-speaker-notes-chunks.py \
-  resources/SPEAKER_NOTES.md \
-  --output .tmp/prompt-first/SPEAKER_NOTES_CHUNKS.json \
-  --tts-output .tmp/prompt-first/SPEAKER_NOTES_TTS.txt
-
-./.venv/bin/python scripts/generate-english-keynote.py \
-  .tmp/prompt-first/SPEAKER_NOTES_CHUNKS.json \
-  --profile-name "<exact Voicebox profile>" \
-  --output .tmp/prompt-first/preflight.wav \
-  --dry-run
-```
-
-The formatter must report the expected slide count and total target duration.
-
-## Workflow Playground
-
-`scripts/generate-keynote-workflow.sh` is intentionally transparent. Inspect
-and edit its values directly for the run:
-
-- `run_name`;
-- resource input paths when they differ from defaults;
-- exact Voicebox profile;
-- TTS batch size, attempts, and timing tolerance;
-- CUDA device for Whisper and any environment-level GPU selection.
-
-The script creates one timestamped directory below `data/runs/` and copies the
-run inputs into it before generation. Preserve that centralized run layout.
-
-Start Voicebox as described in `docs/installation.md`, then run the workflow.
-Monitor every stage; batch TTS and video rendering may produce output only at
-batch boundaries.
-
-## Completion Checks
-
-Require all of the following:
-
-1. Timing report status is `completed`.
-2. Its slide count equals the prompt, note, and image counts.
-3. One selected WAV exists per slide.
-4. SRT, VTT, and LRC subtitles exist.
-5. Anchor report status is `completed`.
-6. One video clip exists per slide.
-7. Final MP4 contains H.264 video and AAC audio.
-8. WAV, subtitle end, anchor-report duration, and MP4 duration agree within a
-   small encoding tolerance.
-9. The workflow log contains no traceback, out-of-memory failure, or aborted
-   stage.
-
-Report timing-tolerance misses and unresolved OCR anchors as quality metrics,
-not hidden failures. A completed pipeline can still require content review.
+If the runtime is absent or unsuitable, stop after the assets and tell the
+user exactly what remains. Do not install GPU software, substitute a different
+voice, or silently skip media stages merely to make the follow-on appear
+complete.

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import struct
 import subprocess
 import sys
+import zlib
 from pathlib import Path
-
-from PIL import Image
 
 from tests.helpers import PROJECT_DIR
 
@@ -15,6 +16,21 @@ AUDITOR = (
 MANIFEST_BUILDER = (
     PROJECT_DIR / "skills" / "oratordeck-prompt-first" / "scripts" / "build_prompt_manifest.py"
 )
+SKILL_DIR = PROJECT_DIR / "skills" / "oratordeck-prompt-first"
+
+
+def load_auditor_module():
+    module_name = "oratordeck_test_prompt_first_auditor"
+    spec = importlib.util.spec_from_file_location(module_name, AUDITOR)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Cannot load {AUDITOR}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+auditor = load_auditor_module()
 
 
 def write_prompt(path: Path) -> None:
@@ -63,6 +79,47 @@ Begin with the **Central question**, cross the evidence bridge, and reach the
     )
 
 
+def write_png(path: Path, width: int, height: int) -> None:
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+        return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", checksum)
+
+    scanline = b"\x00" + b"\xff\xff\xff" * width
+    payload = b"".join(scanline for _ in range(height))
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(payload))
+        + chunk(b"IEND", b"")
+    )
+
+
+def write_jpeg_header(path: Path, width: int, height: int) -> None:
+    frame = (
+        b"\x08"
+        + struct.pack(">HH", height, width)
+        + b"\x01"
+        + b"\x01\x11\x00"
+    )
+    path.write_bytes(
+        b"\xff\xd8"
+        + b"\xff\xc0"
+        + struct.pack(">H", len(frame) + 2)
+        + frame
+        + b"\xff\xd9"
+    )
+
+
+def write_webp_vp8x_header(path: Path, width: int, height: int) -> None:
+    payload = (
+        b"\x00\x00\x00\x00"
+        + (width - 1).to_bytes(3, "little")
+        + (height - 1).to_bytes(3, "little")
+    )
+    webp = b"WEBP" + b"VP8X" + struct.pack("<I", len(payload)) + payload
+    path.write_bytes(b"RIFF" + struct.pack("<I", len(webp)) + webp)
+
+
 def run_audit(tmp_path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
@@ -94,7 +151,7 @@ def test_audits_provider_specific_prompt_notes_and_image(tmp_path: Path) -> None
     write_notes(tmp_path / "SPEAKER_NOTES.md")
     images = tmp_path / "generated-images"
     images.mkdir()
-    Image.new("RGB", (1600, 900), "white").save(images / "slide-01_opening.png")
+    write_png(images / "slide-01_opening.png", 1600, 900)
 
     result = run_audit(tmp_path)
 
@@ -120,7 +177,7 @@ def test_rejects_anchor_missing_from_visible_text_manifest(tmp_path: Path) -> No
     write_notes(tmp_path / "SPEAKER_NOTES.md", final_anchor="Invented claim")
     images = tmp_path / "generated-images"
     images.mkdir()
-    Image.new("RGB", (1600, 900), "white").save(images / "slide-01_opening.png")
+    write_png(images / "slide-01_opening.png", 1600, 900)
 
     result = run_audit(tmp_path)
 
@@ -163,3 +220,54 @@ def test_builds_ordered_generation_manifest(tmp_path: Path) -> None:
         "Bounded answer",
     ]
     assert slide["image_prompt"].startswith("Create a restrained 16:9")
+
+
+def test_skill_scope_stops_at_images_and_speaker_notes() -> None:
+    skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
+    handoff = (SKILL_DIR / "references" / "oratordeck-handoff.md").read_text(encoding="utf-8")
+    interface = (SKILL_DIR / "agents" / "openai.yaml").read_text(encoding="utf-8")
+    bundled_markdown = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(SKILL_DIR.rglob("*.md"))
+    )
+    normalized_handoff = " ".join(handoff.split())
+
+    assert "This skill ends after it has produced and audited" in skill
+    assert "outside this skill" in skill
+    assert "Do not produce" in skill
+    assert "does not need the skill at runtime" in normalized_handoff
+    assert "Create aligned slide images and speaker notes" in interface
+    assert "OratorDeck video" not in interface
+    assert "./.venv/bin/python" not in bundled_markdown
+    assert "--profile-name" not in bundled_markdown
+    assert "CUDA_VISIBLE_DEVICES" not in bundled_markdown
+
+
+def test_image_audit_has_no_pillow_dependency() -> None:
+    auditor_source = AUDITOR.read_text(encoding="utf-8")
+
+    assert "from PIL" not in auditor_source
+    assert "import PIL" not in auditor_source
+
+
+def test_reads_supported_image_dimensions_with_standard_library(tmp_path: Path) -> None:
+    png = tmp_path / "slide.png"
+    jpeg = tmp_path / "slide.jpg"
+    webp = tmp_path / "slide.webp"
+    write_png(png, 1600, 900)
+    write_jpeg_header(jpeg, 1280, 720)
+    write_webp_vp8x_header(webp, 1920, 1080)
+
+    assert auditor.image_dimensions(png) == (1600, 900)
+    assert auditor.image_dimensions(jpeg) == (1280, 720)
+    assert auditor.image_dimensions(webp) == (1920, 1080)
+
+
+def test_readme_presents_two_composable_halves() -> None:
+    readme = (PROJECT_DIR / "README.md").read_text(encoding="utf-8")
+
+    assert "two independent, composable parts" in readme
+    assert "The skill stops after preparing and auditing" in readme
+    assert "Neither the skill nor an Agent" in readme
+    assert "两个相互独立、又可组合使用的部分" in readme
+    assert "skill 会停在图片和讲稿" in readme
+    assert "images, synchronized English speaker notes, and final annotated video" not in readme

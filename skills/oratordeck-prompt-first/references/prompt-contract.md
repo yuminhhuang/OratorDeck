@@ -9,7 +9,9 @@ Read this reference when creating or substantially revising prompt sources.
 - Make the prompt self-contained so it can be submitted without another slide.
 - Derive claims, metrics, citations, and boundaries from identified evidence.
 - Put every intended visible string exactly inside straight double quotes.
-- Treat rendered images, notes, audio, subtitles, and video as derivatives.
+- Treat rendered images and speaker notes as derivatives. They may later feed
+  OratorDeck's independent media workflow, but that workflow is not part of
+  prompt-first authoring.
 
 ## Recommended File Shape
 

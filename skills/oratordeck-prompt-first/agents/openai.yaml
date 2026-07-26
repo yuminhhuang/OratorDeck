@@ -1,4 +1,4 @@
 interface:
   display_name: "OratorDeck Prompt-First"
-  short_description: "Create aligned slides, narration, and video"
-  default_prompt: "Use $oratordeck-prompt-first to turn my presentation brief into prompt-defined slide images, synchronized speaker notes, and an OratorDeck video."
+  short_description: "Create aligned slide images and speaker notes"
+  default_prompt: "Use $oratordeck-prompt-first to turn my presentation brief into prompt-defined slide images and synchronized speaker notes."

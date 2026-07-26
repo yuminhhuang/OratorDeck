@@ -19,12 +19,16 @@ subtitles are delivered as separate SRT, WebVTT, and LRC files.
 The result is useful for rehearsing, reviewing, sharing, or publishing a
 presentation without manually recording and editing every slide.
 
-You can start in either of two ways:
+OratorDeck is intentionally split into two independent, composable parts:
 
-1. **Provide one prompt per slide.** The included skill generates the slide
-   images, synchronized speaker notes, and final video.
-2. **Provide your own slide images and speaker notes.** OratorDeck turns them
-   directly into the same annotated video.
+1. **Prompt-first authoring:** the optional skill turns per-slide prompts into
+   aligned slide images and synchronized speaker notes. It does not require the
+   local media runtime or a local GPU.
+2. **Standalone media generation:** the repository workflow turns prepared
+   images and speaker notes into audio, subtitles, and the annotated video. It
+   does not require the skill or an Agent once those inputs exist.
+
+Use either part by itself, or run them in sequence.
 
 ### Option 1: Start from per-slide prompts
 
@@ -50,24 +54,40 @@ Install the
 https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
 ```
 
-Then ask Codex:
+For images and speaker notes only—even on a device without a local GPU—ask
+Codex:
 
 ```text
 Use $oratordeck-prompt-first with my per-slide prompts to generate the slide
-images, synchronized English speaker notes, and final annotated video.
+images and synchronized English speaker notes.
 ```
 
-The skill will prepare matching slide images and narration, place spoken
-anchors on visible slide wording, run OratorDeck, and check the final outputs.
-You remain in control of facts, numbers, citations, and other source material.
+The skill stops after preparing and auditing the prompts, matching images, and
+speaker notes. It does not install or run TTS, transcription, OCR video
+rendering, or FFmpeg. You remain in control of facts, numbers, citations, and
+other source material.
 
 Image creation requires an image-generation capability available to the agent.
-The local media environment described below is still required for narration
-and video generation.
+The skill does not require a GPU on the user's device. If image generation is
+unavailable, the skill can still help author and audit the prompts. Its bundled
+audits use only the Python 3 standard library and work on Linux, macOS, and
+Windows.
 
-### Option 2: Start from your own images and script
+When the OratorDeck media runtime and a suitable GPU are already available, you
+can ask the Agent to continue after the skill finishes:
 
-The skill is not required. Prepare these two inputs:
+```text
+After the slide images and speaker notes pass their audit, continue outside the
+skill by running scripts/generate-keynote-workflow.sh to produce the final
+media.
+```
+
+Without that extra request, the skill ends with the images and speaker notes.
+
+### Option 2: Start from your own images and speaker notes
+
+This is the independent media-generation half. Neither the skill nor an Agent
+is required once you have prepared these two inputs:
 
 ```text
 resources/
@@ -100,10 +120,12 @@ Slide numbers must be contiguous and agree across the notes and images.
 Supported image names include `slide-01.png`, `slide-01-opening.jpg`, and
 `slide-01_opening.webp`.
 
-### Install the local runtime
+### Install the local media runtime
 
-Python 3.11 and a CUDA-capable NVIDIA GPU are recommended. Git and
-[`just`](https://github.com/casey/just) are also required to prepare Voicebox.
+Skip this section if you only want the skill to create images and speaker
+notes. For local audio and video generation, Python 3.11 and a CUDA-capable
+NVIDIA GPU are recommended. Git and [`just`](https://github.com/casey/just)
+are also required to prepare Voicebox.
 
 ```bash
 git clone https://github.com/yuminhhuang/OratorDeck.git
@@ -126,16 +148,17 @@ With the service running, create a Qwen CustomVoice profile in Voicebox. See
 the [installation guide](docs/installation.md) for the complete Voicebox and
 voice-profile setup.
 
-### Generate the video without the skill
+### Run the standalone media workflow
 
-Edit `scripts/generate-keynote-workflow.sh` and set the voice profile, GPU,
-output name, and any timing preferences. Then run:
+Whether the assets came from the skill or were prepared manually, edit
+`scripts/generate-keynote-workflow.sh` and set the voice profile, GPU, output
+name, and any timing preferences. Then run:
 
 ```bash
 scripts/generate-keynote-workflow.sh
 ```
 
-### What will you receive?
+### What will the full media workflow produce?
 
 Each run is saved in one timestamped directory:
 
@@ -167,7 +190,7 @@ the inputs, timing information, anchor results, and the full generation log.
 
 ### Current limitations
 
-- The production workflow currently targets English narration.
+- The standalone media workflow currently targets English narration.
 - Slide backgrounds are static images; underlined anchors provide the visual
   emphasis.
 - Timed subtitles are separate SRT, WebVTT, and LRC files. They are not
@@ -239,11 +262,14 @@ OratorDeck 通过生成带视觉锚点下划线的演讲视频，并同时提供
 
 这样的结果可用于演练、审阅、分享或发布演示，无需手工录制和剪辑每张 slide。
 
-你可以选择两种使用方式：
+OratorDeck 刻意分为两个相互独立、又可组合使用的部分：
 
-1. **提供每张 slide 的 prompt。**仓库内的 skill 会自动生成 slide 图片、同步讲稿和
-   最终视频。
-2. **提供自己的 slide 图片和讲稿。**OratorDeck 会直接把它们制作成相同形式的标注视频。
+1. **Prompt-first 创作：**可选 skill 把逐页 prompts 转换为相互对齐的 slide 图片和同步
+   讲稿，不要求本地媒体环境或本地 GPU。
+2. **独立媒体生成：**仓库工作流把准备好的图片和讲稿转换为音频、字幕和标注视频。输入
+   准备好后，这一部分不要求 skill 或 Agent。
+
+你可以单独使用任意一部分，也可以依次串联使用。
 
 ### 方式一：从逐页 prompts 开始
 
@@ -268,22 +294,35 @@ skill 也可以先帮助你编写这些 prompts。
 https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck-prompt-first
 ```
 
-然后告诉 Codex：
+如果只需要图片和讲稿——即使设备没有本地 GPU——可以告诉 Codex：
 
 ```text
 Use $oratordeck-prompt-first with my per-slide prompts to generate the slide
-images, synchronized English speaker notes, and final annotated video.
+images and synchronized English speaker notes.
 ```
 
-skill 会准备相互匹配的 slide 图片和讲稿，把语音锚点对应到可见文字，运行 OratorDeck，
-并检查最终结果。事实、数字、引用及其他源材料仍由用户控制。
+skill 会在准备并审查 prompts、对应图片和讲稿后结束。它不会安装或运行 TTS、语音转录、
+OCR 视频渲染或 FFmpeg。事实、数字、引用及其他源材料仍由用户控制。
 
-自动创建图片要求 agent 具备图片生成能力；语音和视频生成仍需安装下文介绍的本地运行
-环境。
+自动创建图片要求 Agent 具备图片生成能力，但 skill 不要求用户设备具备 GPU。如果无法
+生成图片，skill 仍可帮助编写和审查 prompts。它附带的审查工具只使用 Python 3 标准库，
+可在 Linux、macOS 和 Windows 上运行。
+
+如果设备已经准备好 OratorDeck 媒体环境和合适的 GPU，可以要求 Agent 在 skill 完成后
+继续：
+
+```text
+After the slide images and speaker notes pass their audit, continue outside the
+skill by running scripts/generate-keynote-workflow.sh to produce the final
+media.
+```
+
+如果没有这项额外要求，skill 会停在图片和讲稿。
 
 ### 方式二：使用自己的图片和讲稿
 
-无需安装 skill。准备以下两份输入：
+这是独立的媒体生成部分。准备好以下两份输入后，既不要求安装 skill，也不要求使用
+Agent：
 
 ```text
 resources/
@@ -313,9 +352,10 @@ then build the evidence step by step.
 讲稿和图片中的 slide 编号必须连续且一致。图片可以命名为 `slide-01.png`、
 `slide-01-opening.jpg` 或 `slide-01_opening.webp`。
 
-### 安装本地运行环境
+### 安装本地媒体环境
 
-建议使用 Python 3.11 和支持 CUDA 的 NVIDIA GPU。准备 Voicebox 还需要 Git 和
+如果只使用 skill 创建图片和讲稿，可以跳过本节。要在本地生成音频和视频，建议使用
+Python 3.11 和支持 CUDA 的 NVIDIA GPU；准备 Voicebox 还需要 Git 和
 [`just`](https://github.com/casey/just)。
 
 ```bash
@@ -337,16 +377,17 @@ ORATORDECK_TTS_GPU=0 scripts/run-voicebox.sh
 服务启动后，再在 Voicebox 中创建 Qwen CustomVoice profile。完整配置方式见
 [安装指南](docs/installation.md)。
 
-### 不使用 skill 生成视频
+### 运行独立媒体工作流
 
-编辑 `scripts/generate-keynote-workflow.sh`，设置声音 profile、GPU、输出名称和时间参数，
+无论图片和讲稿来自 skill 还是由用户手工准备，都可以编辑
+`scripts/generate-keynote-workflow.sh`，设置声音 profile、GPU、输出名称和时间参数，
 然后运行：
 
 ```bash
 scripts/generate-keynote-workflow.sh
 ```
 
-### 最终会得到什么？
+### 完整媒体工作流会生成什么？
 
 每次运行都保存在一个带时间戳的目录中：
 
@@ -377,7 +418,7 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 ### 当前限制
 
-- 当前生产流程面向英文演讲。
+- 当前独立媒体工作流面向英文演讲。
 - Slide 背景是静态图片；下划线锚点用于提供视觉强调。
 - 定时字幕以独立的 SRT、WebVTT 和 LRC 文件提供，当前不会烧录或封装进 MP4。
 - 只有当锚点文字在图片中清晰可见时，才能准确添加下划线。

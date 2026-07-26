@@ -18,7 +18,7 @@ For each slide:
 Do not draft a generic speech and insert labels afterward. Let the prompt's
 visible vocabulary shape the prose from the beginning.
 
-## Required OratorDeck Shape
+## Required Speaker-Note Shape
 
 ```markdown
 ## Slide 01 - Opening proposition
@@ -91,9 +91,9 @@ At roughly 120–145 spoken words per minute:
 - avoid consecutive decorative anchors that do not move visual attention.
 
 Balance time by visual and argumentative density instead of assigning every
-slide the same duration. Keep the whole-deck target explicit. OratorDeck treats
-target duration as a goal: the selected TTS voice may not obey pace instructions
-exactly.
+slide the same duration. Keep the whole-deck target explicit. Treat each target
+as an authorial speaking-time estimate, not a guarantee about later speech
+synthesis.
 
 ## OCR-Aware Wording
 
@@ -114,6 +114,6 @@ When a prompt changes:
 3. update its note section;
 4. update adjacent transitions if the argumentative role changed;
 5. rerun the whole-deck audit;
-6. rerun downstream media for affected slides.
+6. identify any existing downstream media as stale.
 
 Do not keep a stale anchor merely because the old wording sounded good.

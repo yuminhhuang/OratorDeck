@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Audit prompt-first slide sources, images, and OratorDeck speaker notes."""
+"""Audit prompt-first slide sources, generated images, and synchronized notes."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import re
+import struct
 import sys
 from collections import Counter
 from collections.abc import Iterable
@@ -45,6 +46,21 @@ STAGE_DIRECTION_PATTERNS = {
     "the exact question is": re.compile(r"\bthe exact question is\b", re.IGNORECASE),
     "as shown on the slide": re.compile(r"\bas shown on the slide\b", re.IGNORECASE),
     "look at the slide": re.compile(r"\blook at the slide\b", re.IGNORECASE),
+}
+JPEG_SOF_MARKERS = {
+    0xC0,
+    0xC1,
+    0xC2,
+    0xC3,
+    0xC5,
+    0xC6,
+    0xC7,
+    0xC9,
+    0xCA,
+    0xCB,
+    0xCD,
+    0xCE,
+    0xCF,
 }
 
 
@@ -160,6 +176,84 @@ def compute_gaps(body: str, anchors: list[re.Match[str]]) -> list[int]:
     return gaps
 
 
+def jpeg_dimensions(data: bytes) -> tuple[int, int]:
+    if not data.startswith(b"\xff\xd8"):
+        raise ValueError("invalid JPEG signature")
+    cursor = 2
+    while cursor < len(data):
+        while cursor < len(data) and data[cursor] != 0xFF:
+            cursor += 1
+        while cursor < len(data) and data[cursor] == 0xFF:
+            cursor += 1
+        if cursor >= len(data):
+            break
+        marker = data[cursor]
+        cursor += 1
+        if marker in {0x01, 0xD8, 0xD9} or 0xD0 <= marker <= 0xD7:
+            continue
+        if cursor + 2 > len(data):
+            break
+        segment_length = int.from_bytes(data[cursor : cursor + 2], "big")
+        if segment_length < 2 or cursor + segment_length > len(data):
+            raise ValueError("invalid JPEG segment")
+        if marker in JPEG_SOF_MARKERS:
+            if segment_length < 7:
+                raise ValueError("invalid JPEG frame header")
+            height = int.from_bytes(data[cursor + 3 : cursor + 5], "big")
+            width = int.from_bytes(data[cursor + 5 : cursor + 7], "big")
+            return width, height
+        if marker == 0xDA:
+            break
+        cursor += segment_length
+    raise ValueError("JPEG dimensions not found")
+
+
+def webp_dimensions(data: bytes) -> tuple[int, int]:
+    if len(data) < 20 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        raise ValueError("invalid WebP signature")
+    cursor = 12
+    while cursor + 8 <= len(data):
+        chunk_type = data[cursor : cursor + 4]
+        chunk_size = int.from_bytes(data[cursor + 4 : cursor + 8], "little")
+        payload_start = cursor + 8
+        payload_end = payload_start + chunk_size
+        if payload_end > len(data):
+            raise ValueError("truncated WebP chunk")
+        payload = data[payload_start:payload_end]
+        if chunk_type == b"VP8X" and len(payload) >= 10:
+            width = int.from_bytes(payload[4:7], "little") + 1
+            height = int.from_bytes(payload[7:10], "little") + 1
+            return width, height
+        if chunk_type == b"VP8 " and len(payload) >= 10:
+            if payload[3:6] != b"\x9d\x01\x2a":
+                raise ValueError("invalid VP8 frame header")
+            width = int.from_bytes(payload[6:8], "little") & 0x3FFF
+            height = int.from_bytes(payload[8:10], "little") & 0x3FFF
+            return width, height
+        if chunk_type == b"VP8L" and len(payload) >= 5:
+            if payload[0] != 0x2F:
+                raise ValueError("invalid VP8L frame header")
+            dimensions = int.from_bytes(payload[1:5], "little")
+            width = (dimensions & 0x3FFF) + 1
+            height = ((dimensions >> 14) & 0x3FFF) + 1
+            return width, height
+        cursor = payload_end + (chunk_size % 2)
+    raise ValueError("WebP dimensions not found")
+
+
+def image_dimensions(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        if len(data) < 24 or data[12:16] != b"IHDR":
+            raise ValueError("invalid PNG header")
+        return struct.unpack(">II", data[16:24])
+    if data.startswith(b"\xff\xd8"):
+        return jpeg_dimensions(data)
+    if data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return webp_dimensions(data)
+    raise ValueError("unsupported or invalid image header")
+
+
 def inspect_image(
     path: Path,
     expected_ratio: float,
@@ -167,17 +261,9 @@ def inspect_image(
 ) -> tuple[list[int] | None, list[str]]:
     errors: list[str] = []
     try:
-        from PIL import Image
-    except ImportError:
-        return None, ["Pillow is required when --images-dir is used"]
-
-    try:
-        with Image.open(path) as image:
-            image.verify()
-        with Image.open(path) as image:
-            width, height = image.size
-    except Exception as exc:  # Pillow exposes format-specific exception classes.
-        return None, [f"image cannot be decoded: {exc}"]
+        width, height = image_dimensions(path)
+    except (OSError, ValueError) as exc:
+        return None, [f"image metadata cannot be read: {exc}"]
 
     if width <= 0 or height <= 0:
         errors.append("image has invalid dimensions")
@@ -520,7 +606,7 @@ def print_human(report: dict) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit prompt-first Markdown sources and optional OratorDeck speaker notes/images."
+            "Audit prompt-first Markdown sources and optional speaker notes/images."
         )
     )
     parser.add_argument("--prompts-dir", type=Path, required=True)
