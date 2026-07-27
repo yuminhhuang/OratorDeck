@@ -235,20 +235,83 @@ def build_deck_review_html(payload: dict) -> str:
       color:#475467; background:#f2f4f7; font-size:11px;
     }
     .mode-notice strong { color:var(--ink); }
-    .anchor-list { display:flex; flex-direction:column; gap:5px; }
-    .anchor-item {
-      display:grid; grid-template-columns:26px 1fr auto; gap:7px;
-      align-items:center; width:100%; text-align:left; padding:6px 7px;
+    .anchor-legend {
+      display:flex; flex-wrap:wrap; gap:5px 10px; margin:-2px 0 9px;
+      color:var(--muted); font-size:9px; text-transform:uppercase;
+      letter-spacing:.02em;
     }
-    .anchor-item.active { border-color:var(--accent); background:var(--accent-soft); }
+    .anchor-legend span { display:inline-flex; align-items:center; gap:4px; }
+    .anchor-legend span::before {
+      content:""; width:8px; height:8px; border-radius:2px; background:#98a2b3;
+    }
+    .anchor-legend .pass::before { background:var(--pass); }
+    .anchor-legend .review::before { background:var(--review); }
+    .anchor-legend .unresolved::before { background:var(--danger); }
+    .anchor-legend .corrected::before { background:var(--corrected); }
+    .anchor-list { display:flex; flex-direction:column; gap:7px; }
+    .anchor-item {
+      display:grid; width:100%; padding:7px 8px 7px 6px;
+      grid-template-columns:26px minmax(0,1fr) auto;
+      grid-template-areas:"number text status" "number summary summary";
+      gap:2px 7px; align-items:center; text-align:left;
+      border-left-width:5px;
+    }
+    .anchor-item.status-pass {
+      border-left-color:var(--pass); background:#ecfdf3;
+    }
+    .anchor-item.status-review {
+      border-left-color:var(--review); background:#fffaeb;
+    }
+    .anchor-item.status-unresolved {
+      border-left-color:var(--danger); background:#fef3f2;
+    }
+    .anchor-item.status-corrected {
+      border-left-color:var(--corrected); background:#eff8ff;
+    }
+    .anchor-item.status-suppressed {
+      border-left-color:#667085; background:#f2f4f7;
+    }
+    .anchor-item.active {
+      outline:2px solid var(--accent); outline-offset:1px;
+      box-shadow:0 0 0 2px #fff;
+    }
     .anchor-item b {
+      grid-area:number;
       width:22px; height:22px; border-radius:11px; background:#eaecf0;
       text-align:center; line-height:22px; font-size:10px;
     }
-    .anchor-item span {
+    .anchor-item.status-pass b { color:var(--pass); background:#d1fadf; }
+    .anchor-item.status-review b { color:var(--review); background:#fef0c7; }
+    .anchor-item.status-unresolved b { color:var(--danger); background:#fee4e2; }
+    .anchor-item.status-corrected b {
+      color:var(--corrected); background:#d1e9ff;
+    }
+    .anchor-item.status-suppressed b { color:#475467; background:#e4e7ec; }
+    .anchor-text {
+      grid-area:text; min-width:0;
       overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px;
     }
-    .state { color:var(--muted); font-size:9px; text-transform:uppercase; }
+    .anchor-status {
+      grid-area:status; padding:2px 6px; border-radius:999px;
+      font-size:8px; font-weight:800; font-style:normal; text-transform:uppercase;
+      letter-spacing:.03em;
+    }
+    .status-pass .anchor-status { color:var(--pass); background:#d1fadf; }
+    .status-review .anchor-status { color:var(--review); background:#fef0c7; }
+    .status-unresolved .anchor-status {
+      color:var(--danger); background:#fee4e2;
+    }
+    .status-corrected .anchor-status {
+      color:var(--corrected); background:#d1e9ff;
+    }
+    .status-suppressed .anchor-status { color:#475467; background:#e4e7ec; }
+    .anchor-summary {
+      grid-area:summary; min-width:0; color:#475467;
+      font-size:9px; line-height:1.3; white-space:normal;
+    }
+    .status-review .anchor-summary { color:#854a0e; }
+    .status-unresolved .anchor-summary { color:var(--danger); font-weight:650; }
+    .status-corrected .anchor-summary { color:#175cd3; }
     .box-actions { display:flex; flex-wrap:wrap; gap:7px; }
     .coordinates {
       margin:8px 0 0; color:var(--muted); font:11px/1.4 ui-monospace,monospace;
@@ -327,6 +390,20 @@ def build_deck_review_html(payload: dict) -> str:
           ? (payload.config.override_filename || "anchor-overrides.json")
           : (payload.config.review_filename || "deck-review.json")
       );
+      const reviewReasonLabels = Object.freeze({
+        no_candidate_above_threshold:"No OCR match found",
+        global_conflict:"Candidates conflict with a stronger anchor",
+        low_ocr_confidence:"Low OCR confidence",
+        low_anchor_coverage:"Partial anchor-text coverage",
+        ambiguous_ocr_candidates:"Ambiguous OCR candidates",
+        global_reassignment:"Reassigned by global matching",
+        proportional_timing:"Approximate timing only",
+        overlapping_anchor_geometry:"Overlaps another anchor box",
+        out_of_bounds_geometry:"Box extends outside the slide",
+        anchor_text_changed:"Anchor text changed",
+        manual_box_override:"Manual box correction",
+        manually_suppressed:"Underline intentionally suppressed"
+      });
       const filmstrip = document.getElementById("filmstrip");
       const canvas = document.getElementById("canvas");
       const slideImage = document.getElementById("slide-image");
@@ -570,18 +647,69 @@ def build_deck_review_html(payload: dict) -> str:
         validation.textContent = parsed.error || `${slide.anchors.length} bold anchors. Use **anchor text** to add or edit anchors.`;
       }
 
+      function anchorListStatus(anchor) {
+        if (anchor.box_source === "suppress") {
+          return {key:"suppressed", label:"Suppressed"};
+        }
+        if (!anchor.box || anchor.verdict === "unresolved") {
+          return {key:"unresolved", label:"Unresolved"};
+        }
+        if (anchor.verdict === "review") {
+          return {key:"review", label:"Review"};
+        }
+        if (anchor.verdict === "corrected" || anchor.box_source === "manual") {
+          return {key:"corrected", label:"Corrected"};
+        }
+        return {key:"pass", label:"Pass"};
+      }
+
+      function reviewReasonLabel(value) {
+        if (reviewReasonLabels[value]) return reviewReasonLabels[value];
+        const fallback = String(value).replaceAll("_", " ");
+        return fallback
+          ? fallback.charAt(0).toUpperCase() + fallback.slice(1)
+          : "Needs review";
+      }
+
+      function anchorListSummary(anchor, status) {
+        const reasons = [...new Set(anchor.review_reasons || [])];
+        if (reasons.length) {
+          return reasons.map(reviewReasonLabel).join(" · ");
+        }
+        if (status === "unresolved") return "No matching box was found";
+        if (status === "corrected") return "Manually corrected";
+        if (status === "suppressed") return "Underline intentionally suppressed";
+        if (status === "review") return "Automatic checks require review";
+        return "Automatic checks passed";
+      }
+
       function renderAnchorList() {
         anchorList.replaceChildren();
         const slide = currentSlide();
         slide.anchors.forEach((anchor, index) => {
+          const status = anchorListStatus(anchor);
+          const summary = anchorListSummary(anchor, status.key);
           const button = document.createElement("button");
           button.type = "button";
-          button.className = `anchor-item${index === activeAnchorIndex ? " active" : ""}`;
-          const state = anchor.box_source === "suppress"
-            ? "suppressed"
-            : (anchor.box ? anchor.box_source : "missing");
-          button.innerHTML = `<b>${index + 1}</b><span></span><i class="state">${state}</i>`;
-          button.querySelector("span").textContent = anchor.text;
+          button.className =
+            `anchor-item status-${status.key}${index === activeAnchorIndex ? " active" : ""}`;
+          button.setAttribute(
+            "aria-label",
+            `${index + 1}. ${anchor.text}. ${status.label}. ${summary}`
+          );
+          button.title = `${status.label}: ${summary}`;
+          const number = document.createElement("b");
+          number.textContent = String(index + 1);
+          const text = document.createElement("span");
+          text.className = "anchor-text";
+          text.textContent = anchor.text;
+          const badge = document.createElement("i");
+          badge.className = "anchor-status";
+          badge.textContent = status.label;
+          const details = document.createElement("small");
+          details.className = "anchor-summary";
+          details.textContent = summary;
+          button.append(number, text, badge, details);
           button.addEventListener("click", () => selectAnchor(index));
           anchorList.appendChild(button);
         });
@@ -1357,6 +1485,12 @@ def build_deck_review_html(payload: dict) -> str:
     </section>
     <section class="section">
       <h2>Anchors</h2>
+      <div class="anchor-legend" aria-label="Anchor status colors">
+        <span class="pass">Pass</span>
+        <span class="review">Review</span>
+        <span class="unresolved">Unresolved</span>
+        <span class="corrected">Corrected</span>
+      </div>
       <div class="anchor-list" id="anchor-list"></div>
     </section>
     <section class="section">

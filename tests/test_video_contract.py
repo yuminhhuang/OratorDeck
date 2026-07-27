@@ -427,6 +427,10 @@ def test_anchor_verdict_html_is_a_self_contained_restricted_slide_editor(
     assert "Drag inside the selected box to move it" in report
     assert "Selected rank" in report
     assert "Timing score" in report
+    assert ".anchor-item.status-review" in report
+    assert ".anchor-item.status-unresolved" in report
+    assert "function anchorListSummary(anchor, status)" in report
+    assert "Low OCR confidence" in report
     assert "Restore OCR box" in report
     assert "Post-TTS box-only mode." in report
     assert "saveReviewButton.hidden = true" in report

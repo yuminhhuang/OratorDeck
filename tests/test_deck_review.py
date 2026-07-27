@@ -345,6 +345,14 @@ def test_pre_tts_editor_has_explicit_save_reset_and_editable_text() -> None:
     assert "Import box overrides" not in document
     assert "background:transparent" in document
     assert "text-shadow:" in document
+    assert ".anchor-item.status-review" in document
+    assert ".anchor-item.status-unresolved" in document
+    assert ".anchor-item.status-corrected" in document
+    assert "function anchorListStatus(anchor)" in document
+    assert "function anchorListSummary(anchor, status)" in document
+    assert "Low OCR confidence" in document
+    assert "Ambiguous OCR candidates" in document
+    assert 'class="anchor-legend"' in document
 
 
 def test_state_bound_editor_overwrites_and_reloads_one_json(
@@ -458,7 +466,10 @@ def test_state_bound_editor_browser_save_refresh_and_reset(
                     "slide": 1,
                     "title": "Generated title",
                     "target_time": "0:20",
-                    "script_markdown": "The **question**.",
+                    "script_markdown": (
+                        "The **question**, **evidence**, **missing phrase**, "
+                        "**corrected phrase**, and **suppressed phrase**."
+                    ),
                     "image_data_uri": "data:image/jpeg;base64,AA==",
                     "anchors": [
                         {
@@ -470,7 +481,52 @@ def test_state_bound_editor_browser_save_refresh_and_reset(
                             "verdict": "pass",
                             "review_reasons": [],
                             "diagnostics": {},
-                        }
+                        },
+                        {
+                            "id": "anchor-02",
+                            "text": "evidence",
+                            "box": box,
+                            "automatic_box": box,
+                            "box_source": "auto",
+                            "verdict": "review",
+                            "review_reasons": [
+                                "low_ocr_confidence",
+                                "ambiguous_ocr_candidates",
+                            ],
+                            "diagnostics": {},
+                        },
+                        {
+                            "id": "anchor-03",
+                            "text": "missing phrase",
+                            "box": None,
+                            "automatic_box": None,
+                            "box_source": "unresolved",
+                            "verdict": "unresolved",
+                            "review_reasons": [
+                                "no_candidate_above_threshold"
+                            ],
+                            "diagnostics": {},
+                        },
+                        {
+                            "id": "anchor-04",
+                            "text": "corrected phrase",
+                            "box": box,
+                            "automatic_box": box,
+                            "box_source": "manual",
+                            "verdict": "corrected",
+                            "review_reasons": ["manual_box_override"],
+                            "diagnostics": {},
+                        },
+                        {
+                            "id": "anchor-05",
+                            "text": "suppressed phrase",
+                            "box": None,
+                            "automatic_box": box,
+                            "box_source": "suppress",
+                            "verdict": "corrected",
+                            "review_reasons": ["manually_suppressed"],
+                            "diagnostics": {},
+                        },
                     ],
                 }
             ],
@@ -505,6 +561,13 @@ def test_state_bound_editor_browser_save_refresh_and_reset(
       await pause();
     }
   }
+  const anchorItems = [...document.querySelectorAll(".anchor-item")];
+  document.body.dataset.harnessAnchorStatuses = anchorItems
+    .map(item => item.querySelector(".anchor-status").textContent)
+    .join("|");
+  document.body.dataset.harnessAnchorSummaries = anchorItems
+    .map(item => item.querySelector(".anchor-summary").textContent)
+    .join("|");
   document.body.dataset.harnessTitle = title.value;
   document.body.dataset.harnessDone = action || "load";
 })();
@@ -544,6 +607,17 @@ def test_state_bound_editor_browser_save_refresh_and_reset(
     try:
         saved_page = render(page_url + "?action=save")
         assert 'data-harness-done="save"' in saved_page
+        assert (
+            'data-harness-anchor-statuses="'
+            'Pass|Review|Unresolved|Corrected|Suppressed"'
+        ) in saved_page
+        assert (
+            "Low OCR confidence · Ambiguous OCR candidates"
+            in saved_page
+        )
+        assert "No OCR match found" in saved_page
+        assert "Manual box correction" in saved_page
+        assert "Underline intentionally suppressed" in saved_page
         assert json.loads(state_path.read_text(encoding="utf-8"))[
             "slides"
         ][0]["title"] == "Saved title"
