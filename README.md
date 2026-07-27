@@ -3,7 +3,11 @@
 > Generate a narrated video with underlined visual anchors—plus separate,
 > matching timed subtitles—so you can prepare a slide presentation faster.
 
-![OratorDeck final output: a narrated slide with the spoken visual anchor underlined and separate timed subtitle files](docs/assets/oratordeck-final-effect.png)
+![Actual OratorDeck synthetic demo: seven visual anchors are underlined as they are spoken across two slides](docs/assets/oratordeck-demo.gif)
+
+Actual 28-second run from the public two-slide example:
+[watch or download it with narration](https://github.com/yuminhhuang/OratorDeck/releases/download/v0.1.0/oratordeck-demo.mp4)
+or [inspect its inputs](examples/demo).
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -16,6 +20,8 @@ provided as separate SRT, WebVTT, and LRC files.
 
 The result is useful for rehearsing, reviewing, sharing, or publishing a
 presentation without manually recording and editing every slide.
+
+![OratorDeck final output: a narrated slide with the spoken visual anchor underlined and separate timed subtitle files](docs/assets/oratordeck-final-effect.png)
 
 Each run also produces an anchor-position file that can help you add matching
 appear/exit animations to the original editable presentation.
@@ -95,11 +101,17 @@ resources/
 If you only have an outline, the skill can help turn it into a coherent ordered
 set of PasS sources.
 
-Install the [`oratordeck`](skills/oratordeck) skill from:
+Install the [`oratordeck`](skills/oratordeck) skill for Codex:
 
-```text
-https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck
+```bash
+npx -y skills@latest add https://github.com/yuminhhuang/OratorDeck \
+  --skill oratordeck \
+  --agent codex \
+  --global
 ```
+
+You can also [inspect it on skills.sh](https://skills.sh/yuminhhuang/oratordeck/oratordeck)
+or install it manually from the repository's `skills/oratordeck` directory.
 
 Then ask Codex:
 

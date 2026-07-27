@@ -1,0 +1,82 @@
+name: Bug report
+description: Report a reproducible problem in OratorDeck
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve OratorDeck. Remove private slide content, voice data, credentials, and unrelated logs before posting.
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected part
+      options:
+        - Prompt-as-Slide skill
+        - Deck Verdict
+        - Narration or timing
+        - Subtitles or alignment
+        - Anchor detection or rendering
+        - Workflow or installation
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the problem and its effect on your presentation.
+      placeholder: "When I ..., OratorDeck ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: List the smallest set of commands and inputs that reproduces the problem.
+      placeholder: |
+        1. Run ...
+        2. Open ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include the OratorDeck commit or release, OS, Python version, and GPU/CUDA details when relevant.
+      render: text
+      placeholder: |
+        OratorDeck: v0.1.0
+        OS:
+        Python:
+        GPU/CUDA:
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Paste the shortest useful log excerpt or attach a redacted anchor report, review JSON, screenshot, or sample.
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Data check
+      options:
+        - label: I removed private presentation material, personal voice data, secrets, and credentials.
+          required: true

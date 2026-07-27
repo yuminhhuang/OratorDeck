@@ -1,6 +1,10 @@
 # Synthetic demo
 
-This demo contains no real presentation material or voice data.
+This two-slide demo contains no real presentation material or personal voice
+data. The verified end-to-end run lasts about 28 seconds and resolves all seven
+visible anchors using corrected subtitle timing.
+
+[Watch or download the narrated result](https://github.com/yuminhhuang/OratorDeck/releases/download/v0.1.0/oratordeck-demo.mp4).
 
 Generate its two slide images:
 

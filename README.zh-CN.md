@@ -3,7 +3,11 @@
 > 生成带视觉锚点下划线的演讲视频，并提供匹配的独立定时字幕文件，帮助你更快准备
 > 幻灯片演示。
 
-![OratorDeck 最终效果：演讲视频在读到视觉锚点时添加下划线，并提供独立的定时字幕文件](docs/assets/oratordeck-final-effect.png)
+![OratorDeck 真实 synthetic demo：两张 slide 中的七个视觉锚点在被读到时依次添加下划线](docs/assets/oratordeck-demo.gif)
+
+这是公开两页示例的一次真实 28 秒运行：
+[观看或下载带旁白版本](https://github.com/yuminhhuang/OratorDeck/releases/download/v0.1.0/oratordeck-demo.mp4)，
+或[检查它的输入](examples/demo)。
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
@@ -14,6 +18,8 @@ OratorDeck 把 slide 图片和英文讲稿转换为完整的演讲视频。每�
 SRT、WebVTT 和 LRC 文件提供。
 
 结果可以用于演练、审阅、分享或发布演示，无需手工录制和剪辑每张 slide。
+
+![OratorDeck 最终效果：演讲视频在读到视觉锚点时添加下划线，并提供独立的定时字幕文件](docs/assets/oratordeck-final-effect.png)
 
 每次运行还会生成锚点位置文件，帮助用户在原始可编辑 presentation 中制作对应的
 出现/退出动画。
@@ -82,11 +88,17 @@ resources/
 
 如果手中只有大纲，skill 可以帮助你把它改写成一组论证连贯、顺序明确的 PasS 源文件。
 
-从以下地址安装 [`oratordeck`](skills/oratordeck) skill：
+为 Codex 安装 [`oratordeck`](skills/oratordeck) skill：
 
-```text
-https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck
+```bash
+npx -y skills@latest add https://github.com/yuminhhuang/OratorDeck \
+  --skill oratordeck \
+  --agent codex \
+  --global
 ```
+
+也可以先在 [skills.sh](https://skills.sh/yuminhhuang/oratordeck/oratordeck)
+检查该 skill，或从仓库的 `skills/oratordeck` 目录手工安装。
 
 然后告诉 Codex：
 

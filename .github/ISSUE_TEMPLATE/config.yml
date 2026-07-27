@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and workflow help
+    url: https://github.com/yuminhhuang/OratorDeck/discussions/categories/q-a
+    about: Ask how to prepare inputs, run a stage, or interpret an output.
+  - name: Private security report
+    url: https://github.com/yuminhhuang/OratorDeck/security/advisories/new
+    about: Report a vulnerability without publishing it in an issue.
