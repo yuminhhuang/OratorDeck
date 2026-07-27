@@ -156,15 +156,16 @@ Then run:
 scripts/generate-keynote-workflow.sh
 ```
 
-The workflow creates `resources/.oratordeck/deck-verdict.html` and the reusable
-`resources/.oratordeck/deck-ocr.json`, starts the unified state-bound
-workbench in pre-TTS mode, and continues directly into TTS. The workflow prints
-a run-specific command that can reopen both phases from another terminal:
+The workflow treats `resources/` as read-only. It creates
+`data/workspaces/RUN_NAME/verdict/deck-verdict.html` and the reusable
+`deck-ocr.json` beside it, starts the unified state-bound workbench in pre-TTS
+mode, and continues directly into TTS. The workflow prints a run-specific
+command that can reopen both phases from another terminal:
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
-  resources/.oratordeck/deck-verdict.html \
-  resources/.oratordeck/deck-review.json \
+  data/workspaces/RUN_NAME/verdict/deck-verdict.html \
+  data/workspaces/RUN_NAME/verdict/deck-review.json \
   --post-html data/runs/RUN/video/anchor-verdict.html \
   --post-state data/runs/RUN/video/anchor-overrides.json
 ```
@@ -193,8 +194,9 @@ preparing the panel and printing its command. The workflow prints the
 timestamped run directory and MP4 path, then ends with a prominent
 `DECK VERDICT — NEXT STEPS AFTER SAVE` block. That block gives one exact
 command for a new full run after a pre-TTS save and another for video-only
-rerendering after a post-TTS save. All intermediate artifacts remain together
-below `data/runs/`.
+rerendering after a post-TTS save. All mutable state remains below `data/`: the
+reusable pre-TTS workspace under `data/workspaces/`, and immutable run
+snapshots plus generated media under `data/runs/`.
 
 The post-TTS phase keeps narration and anchors read-only. **Save box
 overrides** overwrites `video/anchor-overrides.json`, while **Reset** writes

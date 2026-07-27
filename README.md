@@ -201,6 +201,11 @@ scripts/generate-keynote-workflow.sh
 This single command generates the audio, subtitles, anchor cues, and final
 video in a timestamped directory under `data/runs/`.
 
+The workflow treats `resources/` as read-only input. Its reusable pre-TTS
+Verdict HTML, saved review JSON, and image-bound OCR cache live under
+`data/workspaces/<run_name>/verdict/`; each timestamped run snapshots the
+review and OCR data it actually consumed.
+
 The optional Deck Verdict workbench opens in pre-TTS mode while generation
 continues. You may ignore it, or review the deck while waiting for the GPU
 steps:
@@ -268,6 +273,11 @@ OratorDeck media workflow.
 The files most users need are:
 
 ```text
+data/workspaces/my-talk/verdict/
+├── deck-verdict.html
+├── deck-review.json
+└── deck-ocr.json
+
 data/runs/my-talk-YYYYMMDD-HHMMSS/
 ├── audio/my-talk.wav
 ├── subtitles/my-talk.srt
@@ -292,8 +302,8 @@ Reopen both phases in one workbench with:
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
-  resources/.oratordeck/deck-verdict.html \
-  resources/.oratordeck/deck-review.json \
+  data/workspaces/my-talk/verdict/deck-verdict.html \
+  data/workspaces/my-talk/verdict/deck-review.json \
   --post-html data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-verdict.html \
   --post-state data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-overrides.json
 ```

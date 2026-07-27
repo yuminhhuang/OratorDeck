@@ -16,19 +16,23 @@ matching slide image.
 
 Both private inputs are ignored by Git.
 
-The default media workflow prepares
-`resources/.oratordeck/deck-verdict.html` plus
-`resources/.oratordeck/deck-ocr.json`, opens the optional state-bound editor in
-the background, and continues into TTS without waiting. Review the slides,
-manuscript, bold anchors, and bounding boxes while the GPU stages run—or ignore
-the panel. Click Save to overwrite
-`resources/.oratordeck/deck-review.json`; if its corrections matter, interrupt
-and rerun. A run uses only the review snapshot that existed when it started, so
-concurrent edits never change its inputs midway. The OCR file stores raw text
-lines and coordinates bound to each source image by SHA-256; the video stage
-validates and reuses it rather than running OCR a second time. Changed images
-require regenerating the review artifacts. The entire `.oratordeck/` review
-workspace is private and ignored by Git.
+The media workflow treats this directory as read-only. It copies the notes and
+images into a timestamped run at launch; all mutable Verdict artifacts go to
+`data/workspaces/<run_name>/verdict/`, never under `resources/`.
+
+The default workflow prepares `deck-verdict.html` plus `deck-ocr.json` in that
+workspace, opens the optional state-bound editor in the background, and
+continues into TTS without waiting. Review the slides, manuscript, bold
+anchors, and bounding boxes while the GPU stages run—or ignore the panel.
+Click Save to overwrite the workspace's `deck-review.json`; if its corrections
+matter, interrupt and rerun. A run uses only the review snapshot that existed
+when it started, so concurrent edits never change its inputs midway. The OCR
+file stores raw text lines and coordinates bound to each source image by
+SHA-256; the video stage validates and reuses it rather than running OCR a
+second time. Changed images require regenerating the review artifacts. Both
+the persistent workspace and timestamped runs live under the Git-ignored
+`data/` output tree.
+
 The panel deliberately has only **Save deck review** and **Reset**. It has no
 browser autosave, import, or downloaded-copy state: Save writes the bound JSON,
 Reset writes its generated initial state, and refresh reloads it.

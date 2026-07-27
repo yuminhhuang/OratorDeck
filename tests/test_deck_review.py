@@ -5,6 +5,7 @@ import json
 import math
 import shutil
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from urllib.error import HTTPError
@@ -286,6 +287,47 @@ def test_default_workflow_offers_verdict_without_blocking_tts() -> None:
     assert "$video_dir/anchor-video-report.json" in next_steps
     assert "--anchor-overrides" in next_steps
     assert "$post_tts_review_file" in next_steps
+
+
+def test_repo_workflow_keeps_verdict_state_outside_read_only_resources() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "generate-keynote-workflow.sh"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'review_workspace="$repo_dir/data/workspaces/$run_name/verdict"'
+        in workflow
+    )
+    assert 'deck_verdict_file="$review_workspace/deck-verdict.html"' in workflow
+    assert 'deck_review_file="$review_workspace/deck-review.json"' in workflow
+    assert 'deck_ocr_file="$review_workspace/deck-ocr.json"' in workflow
+    assert "resources/.oratordeck" not in workflow
+
+
+def test_repo_prepare_defaults_keep_outputs_outside_resources(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["prepare-deck-review.py"])
+
+    args = prepare_review.parse_args()
+
+    assert args.speaker_notes == Path("resources/SPEAKER_NOTES.md")
+    assert args.images_dir == Path("resources/generated-images")
+    assert args.output == Path(
+        "data/workspaces/default/verdict/deck-verdict.html"
+    )
+    assert args.review_json == Path(
+        "data/workspaces/default/verdict/deck-review.json"
+    )
+    assert args.ocr_output == Path(
+        "data/workspaces/default/verdict/deck-ocr.json"
+    )
+    assert all(
+        not path.is_relative_to("resources")
+        for path in (args.output, args.review_json, args.ocr_output)
+    )
 
 
 def test_default_workflow_keeps_the_complete_generation_contract() -> None:

@@ -256,18 +256,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("resources/.oratordeck/deck-verdict.html"),
+        default=Path("data/workspaces/default/verdict/deck-verdict.html"),
     )
     parser.add_argument(
         "--review-json",
         type=Path,
-        default=Path("resources/.oratordeck/deck-review.json"),
+        default=Path("data/workspaces/default/verdict/deck-review.json"),
         help="Where the browser should save its review JSON",
     )
     parser.add_argument(
         "--ocr-output",
         type=Path,
-        default=Path("resources/.oratordeck/deck-ocr.json"),
+        default=Path("data/workspaces/default/verdict/deck-ocr.json"),
         help="Reusable image-bound OCR results for the video stage",
     )
     parser.add_argument("--ocr-confidence", type=float, default=0.55)

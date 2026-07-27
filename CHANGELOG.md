@@ -46,6 +46,9 @@ media without an Agent.
 - Reused image-hash-bound OCR results across pre-TTS review and video
   generation, and supported rerendering corrected boxes without repeating TTS
   or subtitle generation.
+- Kept presentation resources read-only by storing reusable pre-TTS Verdict
+  state and OCR results under `data/workspaces/<run_name>/verdict/`; each
+  timestamped run snapshots the review inputs it actually consumes.
 
 ### Narration, Subtitles, and Video
 

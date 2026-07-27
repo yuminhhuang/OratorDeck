@@ -8,9 +8,10 @@ cd "$repo_dir"
 # arguments below directly for each run.
 run_name="my-talk"
 open_pre_tts_verdict=true
-deck_verdict_file="$repo_dir/resources/.oratordeck/deck-verdict.html"
-deck_review_file="$repo_dir/resources/.oratordeck/deck-review.json"
-deck_ocr_file="$repo_dir/resources/.oratordeck/deck-ocr.json"
+review_workspace="$repo_dir/data/workspaces/$run_name/verdict"
+deck_verdict_file="$review_workspace/deck-verdict.html"
+deck_review_file="$review_workspace/deck-review.json"
+deck_ocr_file="$review_workspace/deck-ocr.json"
 
 run_dir="$repo_dir/data/runs/${run_name}-$(date +%Y%m%d-%H%M%S)"
 input_dir="$run_dir/input"

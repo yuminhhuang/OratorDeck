@@ -115,10 +115,11 @@ global assignment have one canonical implementation in
 `oratordeck_verdict/anchoring.py`; the video planner imports that module rather
 than maintaining a second implementation.
 
-The `oratordeck-verdict prepare` command writes a self-contained
-`resources/.oratordeck/deck-verdict.html` and an image-bound
-`resources/.oratordeck/deck-ocr.json`. Slide previews and all editor data are
-embedded in the HTML. Editing uses
+The repository workflow treats `resources/` as read-only and writes a
+self-contained `data/workspaces/<run_name>/verdict/deck-verdict.html` plus an
+image-bound `deck-ocr.json` in the same persistent output workspace. The
+standalone `oratordeck-verdict prepare` command accepts explicit output paths.
+Slide previews and all editor data are embedded in the HTML. Editing uses
 `oratordeck-verdict edit deck-verdict.html deck-review.json`, a loopback
 service with no additional dependencies, implemented in
 `oratordeck_verdict/state_server.py`. This is necessary because a `file://`
@@ -445,10 +446,21 @@ playground. Users edit its Verdict launch preference, voice profile, GPU, batch 
 tolerance, and run name directly.
 
 Every invocation creates a timestamped run and continues through media
-generation. It prepares the pre-TTS verdict plus `deck-ocr.json` when needed
-and starts the unified workbench server in the background, already pointing at
-the future run-specific post artifact. If `deck-review.json` existed at launch,
-the workflow snapshots, validates, and applies it; otherwise it uses the source
+generation. It reads presentation inputs from `resources/` without writing
+there. The persistent pre-TTS Verdict and OCR artifacts live in a run-name
+workspace:
+
+```text
+data/workspaces/my-talk/verdict/
+├── deck-verdict.html
+├── deck-review.json
+└── deck-ocr.json
+```
+
+The workflow prepares that workspace when needed and starts the unified
+workbench server in the background, already pointing at the future
+run-specific post artifact. If `deck-review.json` existed at launch, the
+workflow snapshots, validates, and applies it; otherwise it uses the source
 notes directly. Later pre-TTS saves are deferred to the next invocation. After
 subtitle generation, publishing `anchor-verdict.html` activates and selects
 the box-only phase in that same browser page. Standard output and standard
@@ -489,17 +501,18 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 ```text
 docs/                   user setup and technical architecture
+data/                   Git-ignored workspaces, run snapshots, and generated outputs
 examples/demo/          synthetic public smoke-test inputs
 oratordeck_verdict/     installable Agent-free/GPU-free review package
 patches/                pinned Voicebox batch API patch
-resources/              local presentation inputs
+resources/              read-only local presentation inputs
 scripts/                formatter, TTS, subtitles, video, and workflow entrypoints
 skills/                 installable OratorDeck authoring skill
 tests/                  deterministic unit and contract tests
 ```
 
-`vendor/`, `.venv/`, models, caches, private inputs, and generated runs are
-local-only.
+`vendor/`, `.venv/`, models, caches, private inputs, Verdict workspaces, and
+generated runs are local-only.
 
 ### Validation and tests
 
@@ -652,9 +665,10 @@ RapidOCR，并执行逐页全局锚点分配。OCR 解析、文字匹配、候�
 权威实现：`oratordeck_verdict/anchoring.py`。视频规划器直接导入该模块，不再维护第二套
 实现。
 
-`oratordeck-verdict prepare` 命令输出自包含的
-`resources/.oratordeck/deck-verdict.html`，以及与图片绑定的
-`resources/.oratordeck/deck-ocr.json`。Slide 预览和全部编辑数据都嵌入 HTML。编辑时
+仓库工作流把 `resources/` 视为只读输入，并把自包含的
+`data/workspaces/<run_name>/verdict/deck-verdict.html` 与图片绑定的
+`deck-ocr.json` 写入同一个持久输出工作区。独立的 `oratordeck-verdict prepare` 命令
+接受显式输出路径。Slide 预览和全部编辑数据都嵌入 HTML。编辑时
 使用 `oratordeck-verdict edit deck-verdict.html deck-review.json`；这是由
 `oratordeck_verdict/state_server.py` 实现、不增加额外依赖的 loopback 服务。之所以需要
 它，是因为 `file://` 页面无法安全覆写一个固定的本地 JSON 文件。
@@ -921,10 +935,19 @@ fragment。Overrides 在全局 OCR 分配之后、几何 verdict、cues 和 FFmp
 `scripts/generate-keynote-workflow.sh` 刻意保持为透明的 playground。用户直接编辑
 Verdict 启动偏好、声音 profile、GPU、batch size、时间容差和运行名称。
 
-每次调用都会创建带时间戳的 run 并继续媒体生成。工作流会在需要时准备 TTS 前 verdict
-与 `deck-ocr.json`，并在后台启动统一 workbench 服务，同时预先指向本次 run 尚未生成
-的 TTS 后产物。如果启动时已有 `deck-review.json`，就会快照、校验并应用它；否则直接
-使用源讲稿。之后 TTS 前 Save 的修改会留到下一次调用。字幕生成后，
+每次调用都会创建带时间戳的 run 并继续媒体生成。工作流只读取 `resources/`，不会在
+其中写入产物。持久的 TTS 前 Verdict 与 OCR 产物位于按运行名称区分的工作区：
+
+```text
+data/workspaces/my-talk/verdict/
+├── deck-verdict.html
+├── deck-review.json
+└── deck-ocr.json
+```
+
+工作流会按需准备该工作区，并在后台启动统一 workbench 服务，同时预先指向本次 run
+尚未生成的 TTS 后产物。如果启动时已有 `deck-review.json`，就会快照、校验并应用它；
+否则直接使用源讲稿。之后 TTS 前 Save 的修改会留到下一次调用。字幕生成后，
 `anchor-verdict.html` 的发布会在同一个浏览器页面中激活并选择 box-only 阶段。标准输出
 与错误输出统一写入 `workflow.log`。
 
@@ -963,16 +986,17 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 ```text
 docs/                   用户安装与技术架构
+data/                   Git 忽略的工作区、run 快照和生成输出
 examples/demo/          公开合成 smoke-test 输入
 oratordeck_verdict/     可安装、无需 Agent/GPU 的审校包
 patches/                固定版本的 Voicebox batch API 补丁
-resources/              本地演示输入
+resources/              只读的本地演示输入
 scripts/                格式化、TTS、字幕、视频和工作流入口
 skills/                 可安装的 OratorDeck 创作 skill
 tests/                  确定性单元测试和契约测试
 ```
 
-`vendor/`、`.venv/`、模型、缓存、私有输入和生成结果只保留在本地。
+`vendor/`、`.venv/`、模型、缓存、私有输入、Verdict 工作区和生成结果只保留在本地。
 
 ### 验证与测试
 

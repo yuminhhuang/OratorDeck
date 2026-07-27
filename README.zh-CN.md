@@ -183,6 +183,10 @@ scripts/generate-keynote-workflow.sh
 
 这一条命令会在 `data/runs/` 下的时间戳目录中生成音频、字幕、锚点 cues 和最终视频。
 
+工作流把 `resources/` 视为只读输入。可复用的 TTS 前 Verdict HTML、已保存 review JSON
+和图片绑定 OCR 缓存位于 `data/workspaces/<run_name>/verdict/`；每个时间戳 run 会快照
+它实际使用的 review 与 OCR 数据。
+
 生成继续进行的同时，可选 Deck Verdict 工作台会以 TTS 前模式在后台打开。你可以忽略
 它，也可以利用等待 GPU steps 的时间审阅：
 
@@ -242,6 +246,11 @@ oratordeck-verdict apply \
 多数用户主要需要以下文件：
 
 ```text
+data/workspaces/my-talk/verdict/
+├── deck-verdict.html
+├── deck-review.json
+└── deck-ocr.json
+
 data/runs/my-talk-YYYYMMDD-HHMMSS/
 ├── audio/my-talk.wav
 ├── subtitles/my-talk.srt
@@ -263,8 +272,8 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
-  resources/.oratordeck/deck-verdict.html \
-  resources/.oratordeck/deck-review.json \
+  data/workspaces/my-talk/verdict/deck-verdict.html \
+  data/workspaces/my-talk/verdict/deck-review.json \
   --post-html data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-verdict.html \
   --post-state data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-overrides.json
 ```
