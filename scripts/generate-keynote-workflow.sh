@@ -18,6 +18,8 @@ images_dir="$input_dir/generated-images"
 audio_dir="$run_dir/audio"
 subtitles_dir="$run_dir/subtitles"
 video_dir="$run_dir/video"
+post_tts_verdict_file="$video_dir/anchor-verdict.html"
+post_tts_review_file="$video_dir/anchor-overrides.json"
 
 mkdir -p "$input_dir" "$images_dir" "$audio_dir" "$subtitles_dir" "$video_dir"
 cp resources/SPEAKER_NOTES.md "$input_dir/"
@@ -54,16 +56,18 @@ stop_verdict_server() {
 }
 trap stop_verdict_server EXIT
 
-echo "Optional Deck Verdict: $deck_verdict_file"
+echo "Optional Deck Verdict workbench: $deck_verdict_file"
 echo "State-bound editor command:"
-echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\""
-echo "Save overwrites $deck_review_file; Reset restores its initial JSON."
+echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\" --post-html \"$post_tts_verdict_file\" --post-state \"$post_tts_review_file\""
+echo "Save and Reset affect only the phase currently shown."
 if [[ "$open_pre_tts_verdict" == true ]]; then
   ./.venv/bin/python -m oratordeck_verdict edit \
     "$deck_verdict_file" \
-    "$deck_review_file" &
+    "$deck_review_file" \
+    --post-html "$post_tts_verdict_file" \
+    --post-state "$post_tts_review_file" &
   verdict_server_pid=$!
-  echo "The editor is starting in the background while media generation continues."
+  echo "The workbench is starting in pre-TTS mode while media generation continues."
 fi
 if [[ "$review_available_at_start" == true ]]; then
   echo "This run uses the review snapshot that existed when it started."
@@ -114,6 +118,8 @@ fi
   --overwrite
 
 # 3. Generate corrected subtitles while retaining Whisper's raw subtitles.
+# The post-TTS phase remains absent from the workbench until the next step
+# atomically publishes its subtitle-aware anchor plan.
 CUDA_VISIBLE_DEVICES=0 ./.venv/bin/python scripts/generate-english-subtitles.py \
   "$audio_dir/$run_name.wav" \
   --model turbo \
@@ -139,7 +145,9 @@ fi
   "${ocr_results_args[@]}" \
   --work-dir "$video_dir" \
   --animation-cues-output "$video_dir/anchor-animation-cues.json" \
-  --anchor-verdict-output "$video_dir/anchor-verdict.html" \
+  --anchor-verdict-output "$post_tts_verdict_file" \
+  --pre-verdict-html "$deck_verdict_file" \
+  --pre-verdict-state "$deck_review_file" \
   --review-confidence-threshold 0.78 \
   --review-coverage-threshold 0.65 \
   --review-ambiguity-margin 0.04 \
@@ -147,10 +155,10 @@ fi
   --overwrite
 
 echo "Completed: $run_dir"
-echo "Review and correct anchors with the state-bound editor:"
-echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$video_dir/anchor-verdict.html\" \"$video_dir/anchor-overrides.json\""
-echo "After Save updates $video_dir/anchor-overrides.json, rerender with:"
-echo "  .venv/bin/python scripts/generate-keynote-video.py --rerender-from-report \"$video_dir/anchor-video-report.json\" --anchor-overrides \"$video_dir/anchor-overrides.json\" --overwrite"
+echo "Reopen the unified Deck Verdict workbench:"
+echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\" --post-html \"$post_tts_verdict_file\" --post-state \"$post_tts_review_file\""
+echo "After post-TTS Save updates $post_tts_review_file, rerender with:"
+echo "  .venv/bin/python scripts/generate-keynote-video.py --rerender-from-report \"$video_dir/anchor-video-report.json\" --anchor-overrides \"$post_tts_review_file\" --overwrite"
 if [[ -n "$verdict_server_pid" ]]; then
-  echo "The background pre-TTS editor closes now; use its printed command to reopen it."
+  echo "The background workbench closes now; use its printed command to reopen both phases."
 fi

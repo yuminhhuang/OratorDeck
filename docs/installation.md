@@ -157,20 +157,31 @@ scripts/generate-keynote-workflow.sh
 ```
 
 The workflow creates `resources/.oratordeck/deck-verdict.html` and the reusable
-`resources/.oratordeck/deck-ocr.json`, starts the state-bound editor in the
-background by default, and continues directly into TTS. The same printed
-command can reopen it from another terminal:
+`resources/.oratordeck/deck-ocr.json`, starts the unified state-bound
+workbench in pre-TTS mode, and continues directly into TTS. The workflow prints
+a run-specific command that can reopen both phases from another terminal:
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
   resources/.oratordeck/deck-verdict.html \
-  resources/.oratordeck/deck-review.json
+  resources/.oratordeck/deck-review.json \
+  --post-html data/runs/RUN/video/anchor-verdict.html \
+  --post-state data/runs/RUN/video/anchor-overrides.json
 ```
 
 You may ignore the panel or use the GPU wait time to flip through the deck,
 edit the manuscript and bold anchors, and correct anchor rectangles. Save
 overwrites the fixed review JSON; Reset overwrites it with the generated
 initial state; refresh reloads it.
+
+The post-TTS phase is neither loaded nor shown before its subtitle-aware anchor
+plan exists. Once the subtitle step has completed and the next planning step
+atomically writes `video/anchor-verdict.html`, the open workbench reveals its
+phase switch and automatically selects the post-TTS box-only view. The pre-TTS
+iframe remains alive, so this switch does not discard unsaved in-memory edits.
+Both phases remain available afterward. Switching from post-TTS back to
+pre-TTS requires confirmation because semantic edits invalidate audio,
+subtitles, anchor timing, and video.
 
 The review decision is deterministic per run. A review that existed when the
 workflow started is validated, snapshotted, and applied before TTS. If none
@@ -182,14 +193,13 @@ preparing the panel and printing its command. The final line prints the
 timestamped run directory; the MP4 and all intermediate artifacts are stored
 together below `data/runs/`.
 
-The media pass also writes a strictly box-only `video/anchor-verdict.html` with
-subtitle timing diagnostics. Narration and anchors are read-only. Open it with
-the printed `oratordeck-verdict edit` command bound to
-`video/anchor-overrides.json`. **Save box overrides** overwrites that file,
-while **Reset** writes the generated initial box state. Apply it with the exact
+The post-TTS phase keeps narration and anchors read-only. **Save box
+overrides** overwrites `video/anchor-overrides.json`, while **Reset** writes
+that phase's generated initial box state. Apply it with the exact
 `--rerender-from-report ... --anchor-overrides ... --overwrite` command shown
-in the page without repeating TTS or subtitle generation. Manuscript or anchor
-text changes must return to the pre-TTS verdict and start a new media pass.
+in the panel without repeating TTS or subtitle generation. Manuscript or
+anchor-text changes use the same workbench's pre-TTS phase and require a new
+media pass.
 
 ## Synthetic smoke test
 

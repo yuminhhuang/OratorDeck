@@ -20,7 +20,9 @@ SRT、WebVTT 和 LRC 文件提供。
 
 可选的 **Deck Verdict** 面板可以逐页查看演示、编辑讲稿和加粗锚点，并直接在图片上
 修正锚点框。一键工作流不会等待审阅：你可以忽略面板，也可以在 GPU steps 运行期间
-检查；只有发现值得修正的问题时才需要中断并重跑。
+检查；只有发现值得修正的问题时才需要中断并重跑。它最初只显示 TTS 前完整审校；
+带字幕时序的锚点规划准备好后，同一个面板会自动切换到 TTS 后 box 修正，并显示两个
+阶段的切换控件。
 
 ![Deck Verdict：逐页审阅演示、编辑锚点框，并通过颜色快速发现问题](docs/assets/oratordeck-verdict-panel.png)
 
@@ -166,8 +168,8 @@ scripts/generate-keynote-workflow.sh
 
 这一条命令会在 `data/runs/` 下的时间戳目录中生成音频、字幕、锚点 cues 和最终视频。
 
-生成继续进行的同时，可选 Deck Verdict 面板会在后台打开。你可以忽略它，也可以利用
-等待 GPU steps 的时间审阅：
+生成继续进行的同时，可选 Deck Verdict 工作台会以 TTS 前模式在后台打开。你可以忽略
+它，也可以利用等待 GPU steps 的时间审阅：
 
 - 使用左侧缩略图、按钮或 Page Up/Page Down 翻页；
 - 编辑 slide 标题、预期时间、讲稿和 `**加粗锚点**`；
@@ -176,8 +178,13 @@ scripts/generate-keynote-workflow.sh
 - 点击 **Save deck review** 保存修改；
 - 点击 **Reset** 恢复面板初始状态。
 
-保存不会改变已经运行中的任务。如果修改有必要，应 Save、中断当前任务并重新运行。
-命令启动前已经存在的 review 会应用到本次 run。
+校正字幕时序与最终锚点规划准备好之前，TTS 后阶段不会显示；准备完成后，工作台会自动
+切换过去。此阶段会锁定讲稿与锚点文字，但允许根据真实时序诊断修正 box。随后可以在
+两个阶段之间切换；从 TTS 后切回 TTS 前时，面板会提示语义修改需要重跑音频、字幕、
+锚点规划和视频。
+
+TTS 前 Save 不会改变已经运行中的任务；如果修改有必要，应 Save、中断当前任务并重新
+运行。TTS 后 Save 的 box 修正则可以直接用于重渲染现有 run，无需重复 TTS 或字幕。
 
 需要重新打开面板时，请使用工作流输出的编辑器命令。直接打开 HTML 时面板只读。如果
 不希望自动打开浏览器，可以在工作流脚本中设置
@@ -231,15 +238,18 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 
 主要交付物是 `video/my-talk.mp4`。工作流也会在同一 run 目录中保留逐页媒体与诊断文件。
 
-视频生成后，`video/anchor-verdict.html` 会提供第二个仅限锚点框的 review 面板。此时
-讲稿和锚点已经锁定，但仍可移动、缩放、新建、恢复或关闭下划线框。
+`video/anchor-verdict.html` 是同一个 Deck Verdict 工作台的 TTS 后阶段数据。此阶段
+会锁定讲稿和锚点，但仍可移动、缩放、新建、恢复或关闭下划线框。该文件完整生成之前，
+这个阶段保持隐藏；生成后，已经打开的工作台会自动选择它。
 
-使用以下命令打开：
+使用以下命令在一个工作台中重新打开两个阶段：
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
-  data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-verdict.html \
-  data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-overrides.json
+  resources/.oratordeck/deck-verdict.html \
+  resources/.oratordeck/deck-review.json \
+  --post-html data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-verdict.html \
+  --post-state data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-overrides.json
 ```
 
 保存 box 修正后，无需重复 TTS 或字幕生成即可重渲染已有 run：
@@ -251,8 +261,8 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
   --overwrite
 ```
 
-如果需要修改讲稿、预期时间或加粗锚点，应回到第一个 Deck Verdict 面板并开始新的媒体
-run。
+如果需要修改讲稿、预期时间或加粗锚点，应把工作台切回 TTS 前阶段，Save 后开始新的
+媒体 run。
 
 ## 当前限制
 

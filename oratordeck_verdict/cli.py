@@ -17,8 +17,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="oratordeck-verdict",
         description=(
-            "Prepare and apply OratorDeck's browser-based pre-TTS review "
-            "checkpoint without an Agent or GPU."
+            "Prepare, edit, and apply OratorDeck's browser-based review "
+            "workbench without an Agent or GPU."
         ),
     )
     parser.add_argument(
@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     edit_parser = subparsers.add_parser(
         "edit",
-        help="Open a Verdict panel bound to one persistent JSON file.",
+        help="Open a Verdict panel or unified pre/post-TTS workbench.",
     )
     edit_parser.add_argument("html", type=Path)
     edit_parser.add_argument("state_json", type=Path)
@@ -98,6 +98,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-open",
         action="store_true",
         help="Print the editor URL without opening a browser",
+    )
+    edit_parser.add_argument(
+        "--post-html",
+        type=Path,
+        help=(
+            "Future or existing post-TTS Verdict HTML; when it becomes valid, "
+            "the same workbench reveals phase switching and opens it"
+        ),
+    )
+    edit_parser.add_argument(
+        "--post-state",
+        type=Path,
+        help="Persistent box-override JSON paired with --post-html",
     )
     return parser
 
@@ -142,6 +155,8 @@ def run(args: argparse.Namespace) -> None:
             args.state_json,
             port=args.port,
             open_browser=not args.no_open,
+            post_html_path=args.post_html,
+            post_state_path=args.post_state,
         )
         return
     raise RuntimeError(f"Unsupported command: {args.command}")

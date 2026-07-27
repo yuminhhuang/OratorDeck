@@ -250,7 +250,15 @@ def test_default_workflow_offers_verdict_without_blocking_tts() -> None:
     assert "Saving in the concurrently open editor" in workflow
     assert "while media generation continues" in workflow
     assert "interrupt and rerun" in workflow
-    assert '"$deck_review_file" &' in workflow
+    assert '--post-html "$post_tts_verdict_file"' in workflow
+    assert '--post-state "$post_tts_review_file" &' in workflow
+    assert '--pre-verdict-html "$deck_verdict_file"' in workflow
+    assert '--pre-verdict-state "$deck_review_file"' in workflow
+    subtitles_index = workflow.index("scripts/generate-english-subtitles.py")
+    post_output_index = workflow.index(
+        '--anchor-verdict-output "$post_tts_verdict_file"'
+    )
+    assert tts_index < subtitles_index < post_output_index
     assert "trap stop_verdict_server EXIT" in workflow
     assert "scripts/apply-deck-review.py" in workflow
     assert '--ocr-output "$deck_ocr_file"' in workflow
@@ -436,6 +444,271 @@ def test_state_bound_editor_overwrites_and_reloads_one_json(
             urlopen(stale_request)
         assert error.value.code == 400
         assert json.loads(state_path.read_text(encoding="utf-8")) == initial
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_integrated_workbench_reveals_post_phase_only_after_artifact_exists(
+    tmp_path: Path,
+) -> None:
+    notes, images = write_source_material(tmp_path)
+    source = source_fingerprints(notes, images)
+    pre_html_path = tmp_path / "deck-verdict.html"
+    pre_state_path = tmp_path / "deck-review.json"
+    pre_html_path.write_text(
+        deck_editor.build_deck_review_html(
+            {
+                "title": "Pre-TTS review",
+                "source": source,
+                "preamble": "# Notes\n",
+                "slides": [],
+                "config": {
+                    "mode": "deck-review",
+                    "review_filename": pre_state_path.name,
+                    "override_filename": "anchor-overrides.json",
+                    "allow_override_export": False,
+                    "override_source": None,
+                },
+                "commands": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    post_html_path = tmp_path / "anchor-verdict.html"
+    post_state_path = tmp_path / "anchor-overrides.json"
+    server, page_url = create_editor_server(
+        pre_html_path,
+        pre_state_path,
+        post_html_path=post_html_path,
+        post_state_path=post_state_path,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urlopen(page_url) as response:
+            workbench = response.read().decode("utf-8")
+        assert 'id="phase-bar" aria-label="Verdict phase" hidden' in workbench
+        assert 'data-active-phase="pre"' in workbench
+        assert '.phase-bar[hidden] { display:none; }' in workbench
+        assert "Changes to narration, target time" in workbench
+        assert "audio, subtitles, anchor " in workbench
+
+        with urlopen(page_url + "phase") as response:
+            phase = json.loads(response.read().decode("utf-8"))
+        assert phase == {"post_tts_available": False}
+        with pytest.raises(HTTPError) as error:
+            urlopen(page_url + "post/")
+        assert error.value.code == 404
+
+        with urlopen(page_url + "pre/") as response:
+            pre_page = response.read().decode("utf-8")
+        assert 'content="/' in pre_page
+        assert '/pre/state"' in pre_page
+
+        override_source = {
+            "chunks_sha256": "c" * 64,
+            "images": source["images"],
+        }
+
+        def write_post_html(post_source: dict) -> None:
+            post_html_path.write_text(
+                deck_editor.build_deck_review_html(
+                    {
+                        "title": "Post-TTS review",
+                        "source": source,
+                        "preamble": "# Notes\n",
+                        "slides": [],
+                        "config": {
+                            "mode": "anchor-overrides",
+                            "review_filename": pre_state_path.name,
+                            "override_filename": post_state_path.name,
+                            "allow_override_export": True,
+                            "override_source": post_source,
+                        },
+                        "commands": [],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+        write_post_html(
+            {
+                **override_source,
+                "images": [{"slide": 1, "sha256": "0" * 64}],
+            }
+        )
+        with urlopen(page_url + "phase") as response:
+            phase = json.loads(response.read().decode("utf-8"))
+        assert phase["post_tts_available"] is False
+        assert "different slide-image set" in phase["error"]
+
+        write_post_html(override_source)
+
+        with urlopen(page_url + "phase") as response:
+            phase = json.loads(response.read().decode("utf-8"))
+        assert phase == {"post_tts_available": True}
+        with urlopen(page_url + "post/") as response:
+            post_page = response.read().decode("utf-8")
+        assert "Post-TTS box-only mode." in post_page
+        assert '/post/state"' in post_page
+
+        post_state = {
+            "format": "oratordeck.anchor-overrides.v1",
+            "source": override_source,
+            "overrides": [],
+        }
+        post_request = Request(
+            page_url + "post/state",
+            data=json.dumps(post_state).encode(),
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        with urlopen(post_request) as response:
+            assert response.status == 200
+        assert json.loads(post_state_path.read_text(encoding="utf-8")) == (
+            post_state
+        )
+        assert not pre_state_path.exists()
+
+        pre_state = {
+            "format": "oratordeck.deck-review.v1",
+            "source": source,
+            "preamble": "# Notes\n",
+            "slides": [],
+        }
+        pre_request = Request(
+            page_url + "pre/state",
+            data=json.dumps(pre_state).encode(),
+            headers={"Content-Type": "application/json"},
+            method="PUT",
+        )
+        with urlopen(pre_request) as response:
+            assert response.status == 200
+        assert json.loads(pre_state_path.read_text(encoding="utf-8")) == (
+            pre_state
+        )
+        assert json.loads(post_state_path.read_text(encoding="utf-8")) == (
+            post_state
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+@pytest.mark.skipif(
+    shutil.which("google-chrome") is None,
+    reason="Google Chrome is not installed",
+)
+def test_integrated_workbench_auto_switches_and_warns_before_returning_to_pre(
+    tmp_path: Path,
+) -> None:
+    source = {
+        "speaker_notes_name": "SPEAKER_NOTES.md",
+        "speaker_notes_sha256": "a" * 64,
+        "images": [{"slide": 1, "sha256": "b" * 64}],
+    }
+    pre_html_path = tmp_path / "deck-verdict.html"
+    pre_state_path = tmp_path / "deck-review.json"
+    post_html_path = tmp_path / "anchor-verdict.html"
+    post_state_path = tmp_path / "anchor-overrides.json"
+
+    def editor_html(mode: str) -> str:
+        box_only = mode == "anchor-overrides"
+        return deck_editor.build_deck_review_html(
+            {
+                "title": mode,
+                "source": source,
+                "preamble": "# Notes\n",
+                "slides": [],
+                "config": {
+                    "mode": mode,
+                    "review_filename": pre_state_path.name,
+                    "override_filename": post_state_path.name,
+                    "allow_override_export": box_only,
+                    "override_source": (
+                        {
+                            "chunks_sha256": "c" * 64,
+                            "images": source["images"],
+                        }
+                        if box_only
+                        else None
+                    ),
+                },
+                "commands": [],
+            }
+        )
+
+    pre_html_path.write_text(editor_html("deck-review"), encoding="utf-8")
+    post_html_path.write_text(
+        editor_html("anchor-overrides"),
+        encoding="utf-8",
+    )
+    server, page_url = create_editor_server(
+        pre_html_path,
+        pre_state_path,
+        post_html_path=post_html_path,
+        post_state_path=post_state_path,
+    )
+    harness = r"""
+<script>
+(async () => {
+  const pause = () => new Promise(resolve => setTimeout(resolve, 50));
+  while (document.body.dataset.activePhase !== "post") await pause();
+  document.body.dataset.harnessSawPost = "true";
+  let prompt = "";
+  window.confirm = message => {
+    prompt = message;
+    return true;
+  };
+  document.getElementById("phase-pre").click();
+  document.body.dataset.harnessPrompt = prompt;
+  document.body.dataset.harnessDone = document.body.dataset.activePhase;
+})();
+</script>
+"""
+    server.page = server.page.replace(
+        b"</body>",
+        harness.encode() + b"</body>",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    chrome = shutil.which("google-chrome")
+    try:
+        page = subprocess.run(
+            [
+                chrome,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--disable-dev-shm-usage",
+                f"--user-data-dir={tmp_path / 'chrome-profile'}",
+                "--virtual-time-budget=4000",
+                "--dump-dom",
+                page_url,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        ).stdout
+        assert 'data-active-phase="pre"' in page
+        assert 'data-harness-saw-post="true"' in page
+        assert 'data-harness-done="pre"' in page
+        assert "invalidate the current audio, subtitles, anchor timing" in page
+        assert 'id="phase-bar" aria-label="Verdict phase"' in page
+        assert 'id="phase-bar" aria-label="Verdict phase" hidden' not in page
+        assert 'id="pre-frame" title="Pre-TTS Deck Verdict"' in page
+        assert 'id="post-frame" title="Post-TTS Deck Verdict"' in page
+        pre_tag = page.split('id="pre-frame"', 1)[1].split("</iframe>", 1)[0]
+        post_tag = page.split('id="post-frame"', 1)[1].split("</iframe>", 1)[0]
+        assert 'src="' in pre_tag
+        assert 'hidden=""' not in pre_tag
+        assert 'src="' in post_tag
+        assert 'hidden=""' in post_tag
+        assert "Post-TTS timing is ready. Switched to box-only" in page
     finally:
         server.shutdown()
         server.server_close()

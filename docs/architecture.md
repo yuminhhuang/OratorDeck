@@ -55,7 +55,7 @@ slide-NN_slug.md prompts
                                                │
                               ┌────────────────┴─────────────────┐
                               ▼                                  ▼
-                 animation cues + anchor verdict    annotated slide clips
+             animation cues + post-TTS Verdict phase    annotated slide clips
                                                                   │
                                                                   ▼
                                                               final MP4
@@ -159,6 +159,17 @@ under a random per-process capability path, disables HTTP caching, and
 validates the state format plus complete source fingerprint before reading or
 writing. Opening the HTML directly is read-only, so the UI cannot silently
 fall back to downloading a second, disconnected JSON.
+
+The `edit` command can additionally receive a future `--post-html` and its
+`--post-state`. In that form the service presents one workbench shell
+containing two long-lived, same-origin editor frames. Only the pre-TTS frame is
+loaded or visible initially. The server polls for the post artifact and accepts
+it only after it is a complete `anchor-overrides` editor whose full slide-image
+fingerprint equals the pre-TTS deck. Once accepted, the workbench loads the
+post frame, reveals the phase selector, and switches automatically. The pre
+frame remains alive, preserving unsaved in-memory edits across the automatic
+switch. Returning from post to pre requires confirmation because semantic
+changes invalidate more downstream artifacts.
 
 The separate OCR intermediate uses format `oratordeck.ocr-results.v1` and
 contains:
@@ -336,9 +347,10 @@ The same planning pass writes `anchor-animation-cues.json` using format
 - intentionally suppressed anchors use `status: suppressed`; applied manual
   geometry and its selection provenance remain attached as `manual_override`.
 
-`anchor-verdict.html` reuses the restricted slide editor after audio and
-subtitle generation. It embeds every slide, overlays numbered selected
-locations, and assigns every anchor one of four verdicts:
+`anchor-verdict.html` is the post-TTS phase payload consumed by the same
+restricted Deck Verdict workbench after audio and subtitle generation. It
+embeds every slide, overlays numbered selected locations, and assigns every
+anchor one of four verdicts:
 
 - `pass`: the assignment cleared all configured checks;
 - `corrected`: an accepted manual replacement or suppression is active;
@@ -351,7 +363,13 @@ The inspector preserves OCR confidence, anchor coverage, candidate count,
 timing provenance, and human-readable reasons. Default review thresholds are
 0.78 confidence, 0.65 coverage, and 0.04 candidate-quality margin.
 
-The post-TTS editor is deliberately box-only. The title, target time,
+Before this payload exists, the workbench exposes no post-TTS control or frame.
+The planner writes the payload atomically after the corrected-subtitle step and
+before FFmpeg encoding. Its appearance is therefore the readiness signal that
+causes an already open workbench to reveal the selector and move to post-TTS
+automatically.
+
+The post-TTS phase is deliberately box-only. The title, target time,
 manuscript, and ordered anchor text are read-only because changing any of them
 would invalidate the existing audio, subtitles, and timing map. The reviewer
 may move, resize, create, restore, or suppress bounding boxes, then save
@@ -364,11 +382,12 @@ may move, resize, create, restore, or suppress bounding boxes, then save
 - `action: suppress` deliberately renders no underline;
 - optional `selection` metadata records the bounding-box editor as the source.
 
-The post-TTS editor likewise exposes only **Save box overrides** and **Reset**.
-It uses the same state service: Save overwrites its fixed
+The post-TTS phase likewise exposes only **Save box overrides** and **Reset**.
+It uses its own binding within the same state service: Save overwrites its fixed
 `anchor-overrides.json`, Reset writes the generated initial override document,
-and refresh reloads that file. It keeps no browser-local or import state, so
-only this bound override JSON can affect rerendering.
+and refresh reloads that file. The pre-TTS phase remains bound separately to
+`deck-review.json`. Neither phase keeps browser-local or import state, so only
+these two explicit JSON files can affect their respective rerun paths.
 
 The renderer rejects stale sources, unknown or duplicate targets, non-finite
 coordinates, zero-area boxes, and any fragment outside the 0–1 slide bounds.
@@ -425,10 +444,13 @@ tolerance, and run name directly.
 
 Every invocation creates a timestamped run and continues through media
 generation. It prepares the pre-TTS verdict plus `deck-ocr.json` when needed
-and starts the editor server in the background. If `deck-review.json` existed
-at launch, the workflow snapshots, validates, and applies it; otherwise it uses
-the source notes directly. Later saves are deferred to the next invocation.
-Standard output and standard error are captured in `workflow.log`.
+and starts the unified workbench server in the background, already pointing at
+the future run-specific post artifact. If `deck-review.json` existed at launch,
+the workflow snapshots, validates, and applies it; otherwise it uses the source
+notes directly. Later pre-TTS saves are deferred to the next invocation. After
+subtitle generation, publishing `anchor-verdict.html` activates and selects
+the box-only phase in that same browser page. Standard output and standard
+error are captured in `workflow.log`.
 
 ```text
 data/runs/my-talk-YYYYMMDD-HHMMSS/
@@ -515,7 +537,7 @@ Production validation should additionally confirm:
 - cue and report slide/anchor counts agree;
 - when a reviewed result is required, every slide is accepted in the pre-TTS
   Deck Verdict and that saved review is applied by a fresh run;
-- every orange/red item in the post-TTS `anchor-verdict.html` is reviewed;
+- every orange/red item in the unified workbench's post-TTS phase is reviewed;
 - timing misses and unresolved anchors are reviewed;
 - `workflow.log` contains no traceback or out-of-memory failure.
 
@@ -580,7 +602,7 @@ slide-NN_slug.md prompts
                                         │
                          ┌──────────────┴───────────────┐
                          ▼                              ▼
-                  动画提示＋锚点 verdict             带标注逐页片段
+              动画提示＋TTS 后 Verdict 阶段          带标注逐页片段
                                                         │
                                                         ▼
                                                      最终 MP4
@@ -663,6 +685,13 @@ Inspector 可以编辑 slide 标题、预期时间和讲稿。Markdown 加粗区
 状态服务只监听 `127.0.0.1`，把页面和状态 API 放在每次进程随机生成的 capability
 路径下，关闭 HTTP 缓存，并在读写前校验状态格式和完整源指纹。直接打开 HTML 时页面
 保持只读，因此不会静默退化成下载第二份、彼此脱节的 JSON。
+
+`edit` 命令还可以接收未来的 `--post-html` 及其 `--post-state`。在这种模式下，服务只
+提供一个 workbench 外壳，内部承载两个长期存活、同源的编辑 frame。初始只加载和显示
+TTS 前 frame。服务持续检查 TTS 后产物，只有当它是完整的 `anchor-overrides` 编辑数据，
+且全部 slide 图片指纹与 TTS 前 deck 一致时才接受。接受后，workbench 加载 TTS 后
+frame、显示阶段切换器并自动切换；TTS 前 frame 仍保持存活，因此自动切换不会丢掉尚未
+保存的内存修改。从 TTS 后返回 TTS 前必须确认，因为语义变化会使更多下游产物失效。
 
 独立 OCR 中间产物的格式为 `oratordeck.ocr-results.v1`，包含：
 
@@ -809,8 +838,9 @@ RapidOCR。报告会记录 OCR 来源；复用中间产物时还会记录它的�
 - 主动关闭的锚点使用 `status: suppressed`；人工位置及其选择来源保存在
   `manual_override` 中。
 
-`anchor-verdict.html` 会在音频与字幕生成后复用同一个受限 slide 编辑器。它嵌入每张
-slide、叠加带编号的位置，并为每个锚点给出四种 verdict：
+`anchor-verdict.html` 是音频与字幕生成后，由同一个受限 Deck Verdict workbench 消费
+的 TTS 后阶段数据。它嵌入每张 slide、叠加带编号的位置，并为每个锚点给出四种
+verdict：
 
 - `pass`：通过全部自动检查；
 - `corrected`：已经接受人工替换位置或 suppress 决策；
@@ -821,7 +851,11 @@ slide、叠加带编号的位置，并为每个锚点给出四种 verdict：
 Inspector 保留 OCR 置信度、锚点覆盖率、候选数量、时序来源和可读原因。默认复核阈值
 为 0.78 置信度、0.65 覆盖率和 0.04 候选质量分差。
 
-TTS 后编辑器被严格限制为 box-only。标题、预期时间、讲稿和有序锚点文字均为只读，
+该数据不存在时，workbench 不显示任何 TTS 后控件，也不加载 TTS 后 frame。校正字幕
+步骤结束后，规划器会在 FFmpeg 编码前原子写出该数据；它的完整出现就是 readiness
+信号，使已经打开的 workbench 显示切换器并自动进入 TTS 后阶段。
+
+TTS 后阶段被严格限制为 box-only。标题、预期时间、讲稿和有序锚点文字均为只读，
 因为任一变化都会使已有音频、字幕和时序映射失效。Reviewer 只能移动、缩放、新建、
 恢复或 suppress bounding box，然后保存 `oratordeck.anchor-overrides.v1`，继续复用已有
 音频和字幕：
@@ -833,10 +867,10 @@ TTS 后编辑器被严格限制为 box-only。标题、预期时间、讲稿和�
 - `action: suppress` 明确表示不渲染下划线；
 - 可选的 `selection` 元数据记录修改来自 bounding-box editor。
 
-TTS 后编辑器同样只提供 **Save box overrides** 与 **Reset**，并复用同一状态服务：
-Save 覆写固定的 `anchor-overrides.json`，Reset 写回生成时的初始 override 文档，刷新
-则重新读取该文件。它不维护浏览器本地草稿或 import 状态，因此只有这份绑定的 override
-JSON 能影响重渲染。
+TTS 后阶段同样只提供 **Save box overrides** 与 **Reset**，并在同一状态服务中使用
+自己的绑定：Save 覆写固定的 `anchor-overrides.json`，Reset 写回生成时的初始 override
+文档，刷新则重新读取该文件。TTS 前阶段仍单独绑定 `deck-review.json`。两个阶段都不
+维护浏览器本地草稿或 import 状态，因此只有这两份显式 JSON 能分别影响各自的重跑路径。
 
 渲染器会拒绝过期输入、未知或重复目标、非有限坐标、零面积框以及任何超出 0–1 边界的
 fragment。Overrides 在全局 OCR 分配之后、几何 verdict、cues 和 FFmpeg 渲染之前应用。
@@ -885,8 +919,10 @@ fragment。Overrides 在全局 OCR 分配之后、几何 verdict、cues 和 FFmp
 Verdict 启动偏好、声音 profile、GPU、batch size、时间容差和运行名称。
 
 每次调用都会创建带时间戳的 run 并继续媒体生成。工作流会在需要时准备 TTS 前 verdict
-与 `deck-ocr.json`，并在后台启动编辑服务。如果启动时已有 `deck-review.json`，就会
-快照、校验并应用它；否则直接使用源讲稿。之后 Save 的修改会留到下一次调用。标准输出
+与 `deck-ocr.json`，并在后台启动统一 workbench 服务，同时预先指向本次 run 尚未生成
+的 TTS 后产物。如果启动时已有 `deck-review.json`，就会快照、校验并应用它；否则直接
+使用源讲稿。之后 TTS 前 Save 的修改会留到下一次调用。字幕生成后，
+`anchor-verdict.html` 的发布会在同一个浏览器页面中激活并选择 box-only 阶段。标准输出
 与错误输出统一写入 `workflow.log`。
 
 ```text
@@ -973,7 +1009,7 @@ python /path/to/skill-creator/scripts/quick_validate.py \
 - 动画提示和视频报告中的 slide/anchor 数量一致；
 - 当结果必须经过审校时，在 TTS 前 Deck Verdict 中逐页确认，并通过一次新的 run 应用
   已保存 review；
-- 人工复核 TTS 后 `anchor-verdict.html` 中所有橙色/红色项目；
+- 人工复核统一 workbench 的 TTS 后阶段中所有橙色/红色项目；
 - 人工检查时间误差和 unresolved anchors；
 - `workflow.log` 中没有 traceback 或显存不足错误。
 

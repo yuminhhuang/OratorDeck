@@ -1618,6 +1618,8 @@ def build_anchor_verdict_html(
     chunks_path: Path | None = None,
     images_dir: Path | None = None,
     verdict_path: Path | None = None,
+    pre_verdict_path: Path | None = None,
+    pre_state_path: Path | None = None,
 ) -> str:
     del (
         summary,
@@ -1754,9 +1756,12 @@ def build_anchor_verdict_html(
         if verdict_path is not None
         else rerender_report_path.with_name("anchor-verdict.html")
     )
-    edit_command = (
-        f'"{python_executable}" -m oratordeck_verdict edit '
-        f'"{verdict_path}" "{override_path}"'
+    edit_command = verdict_editor_command(
+        python_executable,
+        verdict_path,
+        override_path,
+        pre_verdict_path=pre_verdict_path,
+        pre_state_path=pre_state_path,
     )
     rerender_command = (
         f'"{python_executable}" "{script_path}" '
@@ -1787,6 +1792,31 @@ def build_anchor_verdict_html(
                     ),
                 ],
         }
+    )
+
+
+def verdict_editor_command(
+    python_executable: Path,
+    post_verdict_path: Path,
+    post_state_path: Path,
+    *,
+    pre_verdict_path: Path | None = None,
+    pre_state_path: Path | None = None,
+) -> str:
+    if (pre_verdict_path is None) != (pre_state_path is None):
+        raise RuntimeError(
+            "Pre-TTS Verdict HTML and state paths must be used together"
+        )
+    if pre_verdict_path is None:
+        return (
+            f'"{python_executable}" -m oratordeck_verdict edit '
+            f'"{post_verdict_path}" "{post_state_path}"'
+        )
+    return (
+        f'"{python_executable}" -m oratordeck_verdict edit '
+        f'"{pre_verdict_path}" "{pre_state_path}" '
+        f'--post-html "{post_verdict_path}" '
+        f'--post-state "{post_state_path}"'
     )
 
 
@@ -1950,12 +1980,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--anchor-verdict-output",
         type=Path,
-        help="Self-contained HTML anchor review and correction path",
+        help="Self-contained post-TTS Verdict phase payload",
+    )
+    parser.add_argument(
+        "--pre-verdict-html",
+        type=Path,
+        help=(
+            "Pre-TTS Verdict HTML to host this post-TTS phase in one "
+            "switchable workbench"
+        ),
+    )
+    parser.add_argument(
+        "--pre-verdict-state",
+        type=Path,
+        help="Pre-TTS review JSON paired with --pre-verdict-html",
     )
     parser.add_argument(
         "--anchor-overrides",
         type=Path,
-        help="Corrections exported by anchor-verdict.html",
+        help="Corrections saved by the post-TTS Verdict phase",
     )
     parser.add_argument(
         "--ocr-results",
@@ -2024,6 +2067,8 @@ def hydrate_rerender_args(args: argparse.Namespace) -> None:
         "output": "output_video",
         "animation_cues_output": "anchor_animation_cues",
         "anchor_verdict_output": "anchor_verdict",
+        "pre_verdict_html": "pre_tts_verdict",
+        "pre_verdict_state": "pre_tts_review",
     }
     for argument, field in optional_paths.items():
         if (
@@ -2072,6 +2117,12 @@ def validate_args(args: argparse.Namespace) -> None:
         raise RuntimeError("--underline-thickness must be between 1 and 30")
     if not 0.1 <= args.min_underline_seconds <= 10:
         raise RuntimeError("--min-underline-seconds must be between 0.1 and 10")
+    if (args.pre_verdict_html is None) != (
+        args.pre_verdict_state is None
+    ):
+        raise RuntimeError(
+            "--pre-verdict-html and --pre-verdict-state must be used together"
+        )
     ffmpeg_color(args.underline_color)
 
 
@@ -2139,6 +2190,20 @@ def main() -> int:
         )
 
     subtitle_path = args.subtitles.resolve() if args.subtitles else None
+    pre_verdict_path = (
+        args.pre_verdict_html.resolve()
+        if args.pre_verdict_html
+        else None
+    )
+    pre_state_path = (
+        args.pre_verdict_state.resolve()
+        if args.pre_verdict_state
+        else None
+    )
+    if pre_verdict_path is not None and not pre_verdict_path.is_file():
+        raise RuntimeError(
+            f"Pre-TTS Verdict HTML does not exist: {pre_verdict_path}"
+        )
     anchor_overrides_path = (
         args.anchor_overrides.resolve() if args.anchor_overrides else None
     )
@@ -2148,6 +2213,8 @@ def main() -> int:
     for label, input_path in (
         ("Anchor overrides", anchor_overrides_path),
         ("OCR results", ocr_results_path),
+        ("Pre-TTS Verdict", pre_verdict_path),
+        ("Pre-TTS review", pre_state_path),
     ):
         if input_path in all_output_paths:
             raise RuntimeError(
@@ -2475,6 +2542,12 @@ def main() -> int:
         "output_video": str(output_path),
         "anchor_animation_cues": str(animation_cues_path),
         "anchor_verdict": str(anchor_verdict_path),
+        "pre_tts_verdict": (
+            str(pre_verdict_path) if pre_verdict_path else None
+        ),
+        "pre_tts_review": (
+            str(pre_state_path) if pre_state_path else None
+        ),
         "anchor_matching_method": OCR_MATCHING_METHOD,
         "python_executable": sys.executable,
         "video_script": str(Path(__file__).resolve()),
@@ -2523,6 +2596,15 @@ def main() -> int:
         chunks_path=chunks_path,
         images_dir=images_dir,
         verdict_path=anchor_verdict_path,
+        pre_verdict_path=pre_verdict_path,
+        pre_state_path=pre_state_path,
+    )
+    editor_command = verdict_editor_command(
+        Path(sys.executable),
+        anchor_verdict_path,
+        anchor_verdict_path.with_name("anchor-overrides.json"),
+        pre_verdict_path=pre_verdict_path,
+        pre_state_path=pre_state_path,
     )
     print(
         f"Plan: {len(slide_plans)} slides, OCR resolved "
@@ -2548,9 +2630,7 @@ def main() -> int:
         print(f"Anchor verdict: {anchor_verdict_path}")
         print(
             "Open the state-bound editor:\n"
-            f"  {sys.executable} -m oratordeck_verdict edit "
-            f'"{anchor_verdict_path}" '
-            f'"{anchor_verdict_path.with_name("anchor-overrides.json")}"'
+            f"  {editor_command}"
         )
         return 0
 
@@ -2591,9 +2671,7 @@ def main() -> int:
     print(f"Anchor verdict: {anchor_verdict_path}")
     print(
         "Open the state-bound editor:\n"
-        f"  {sys.executable} -m oratordeck_verdict edit "
-        f'"{anchor_verdict_path}" '
-        f'"{anchor_verdict_path.with_name("anchor-overrides.json")}"'
+        f"  {editor_command}"
     )
     return 0
 

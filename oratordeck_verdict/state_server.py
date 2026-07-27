@@ -1,10 +1,11 @@
-"""Serve a Verdict panel with one explicit, persistent JSON state file."""
+"""Serve one Verdict workbench with explicit, persistent JSON state."""
 
 from __future__ import annotations
 
 import html
 import json
 import secrets
+import threading
 import webbrowser
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -25,6 +26,15 @@ class EditorStateContract:
     format: str
     source: dict
     suggested_filename: str
+
+
+@dataclass(frozen=True)
+class EditorBinding:
+    page: bytes
+    page_path: str
+    state_endpoint: str
+    state_path: Path
+    contract: EditorStateContract
 
 
 def editor_state_contract(html_contents: str) -> EditorStateContract:
@@ -108,6 +118,190 @@ def _bound_html(
     )
 
 
+def _load_binding(
+    html_path: Path,
+    state_path: Path,
+    page_path: str,
+    state_endpoint: str,
+    *,
+    expected_mode: str | None = None,
+) -> EditorBinding:
+    if not html_path.is_file():
+        raise RuntimeError(f"Verdict HTML does not exist: {html_path}")
+    html_contents = html_path.read_text(encoding="utf-8")
+    contract = editor_state_contract(html_contents)
+    if expected_mode is not None and contract.mode != expected_mode:
+        raise RuntimeError(
+            f"Verdict HTML must use {expected_mode!r} mode, "
+            f"not {contract.mode!r}"
+        )
+    if state_path.is_file():
+        validate_editor_state(
+            json.loads(state_path.read_text(encoding="utf-8")),
+            contract,
+        )
+    return EditorBinding(
+        page=_bound_html(html_contents, state_endpoint, state_path),
+        page_path=page_path,
+        state_endpoint=state_endpoint,
+        state_path=state_path,
+        contract=contract,
+    )
+
+
+def _workbench_html(
+    pre_page_path: str,
+    post_page_path: str,
+    phase_endpoint: str,
+) -> bytes:
+    pre_page = html.escape(pre_page_path, quote=True)
+    post_page = html.escape(post_page_path, quote=True)
+    phase_api = html.escape(phase_endpoint, quote=True)
+    return f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OratorDeck Deck Verdict</title>
+<style>
+  :root {{
+    color-scheme:light;
+    --ink:#172033; --muted:#667085; --line:#d0d5dd;
+    --paper:#f2f4f7; --panel:#fff; --accent:#6941c6;
+  }}
+  * {{ box-sizing:border-box; }}
+  html,body {{ width:100%; height:100%; margin:0; overflow:hidden; }}
+  body {{
+    background:var(--paper); color:var(--ink);
+    font:13px/1.4 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,
+      "Segoe UI",sans-serif;
+  }}
+  .phase-bar {{
+    height:44px; display:flex; align-items:center; justify-content:center;
+    gap:8px; padding:6px 14px; background:var(--panel);
+    border-bottom:1px solid var(--line);
+  }}
+  .phase-bar[hidden] {{ display:none; }}
+  .phase-label {{
+    margin-right:4px; color:var(--muted); font-size:11px; font-weight:650;
+    text-transform:uppercase; letter-spacing:.04em;
+  }}
+  .phase-button {{
+    border:1px solid var(--line); border-radius:999px; padding:5px 11px;
+    background:#fff; color:var(--muted); cursor:pointer; font:inherit;
+  }}
+  .phase-button.active {{
+    color:var(--accent); border-color:#bdb4fe; background:#f4f3ff;
+    font-weight:700;
+  }}
+  .phase-ready {{
+    margin-left:5px; color:#18794e; font-size:11px;
+  }}
+  .panel-frame {{
+    display:block; width:100%; height:100%; border:0; background:var(--paper);
+  }}
+  body.phases-ready .panel-frame {{ height:calc(100% - 44px); }}
+  .panel-frame[hidden] {{ display:none; }}
+  .toast {{
+    position:fixed; left:50%; bottom:20px; z-index:20;
+    transform:translateX(-50%); max-width:720px; padding:9px 13px;
+    border-radius:8px; color:#fff; background:#344054;
+    box-shadow:0 8px 24px #10182830; opacity:0; pointer-events:none;
+    transition:opacity .18s;
+  }}
+  .toast.show {{ opacity:1; }}
+</style>
+</head>
+<body data-active-phase="pre">
+  <nav class="phase-bar" id="phase-bar" aria-label="Verdict phase" hidden>
+    <span class="phase-label">Review phase</span>
+    <button class="phase-button active" id="phase-pre" type="button"
+      aria-pressed="true">Pre-TTS · full review</button>
+    <button class="phase-button" id="phase-post" type="button"
+      aria-pressed="false">Post-TTS · boxes only</button>
+    <span class="phase-ready">Post-TTS timing ready</span>
+  </nav>
+  <iframe class="panel-frame" id="pre-frame" title="Pre-TTS Deck Verdict"
+    src="{pre_page}"></iframe>
+  <iframe class="panel-frame" id="post-frame" title="Post-TTS Deck Verdict"
+    data-src="{post_page}" hidden></iframe>
+  <div class="toast" id="toast"></div>
+<script>
+(() => {{
+  "use strict";
+  const phaseEndpoint = "{phase_api}";
+  const phaseBar = document.getElementById("phase-bar");
+  const preButton = document.getElementById("phase-pre");
+  const postButton = document.getElementById("phase-post");
+  const preFrame = document.getElementById("pre-frame");
+  const postFrame = document.getElementById("post-frame");
+  const toast = document.getElementById("toast");
+  let activePhase = "pre";
+  let postReady = false;
+  let toastTimer = null;
+
+  function showToast(message) {{
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove("show"), 5200);
+  }}
+
+  function selectPhase(phase, automatic = false) {{
+    if (phase === "post" && !postReady) return;
+    activePhase = phase;
+    document.body.dataset.activePhase = phase;
+    preFrame.hidden = phase !== "pre";
+    postFrame.hidden = phase !== "post";
+    preButton.classList.toggle("active", phase === "pre");
+    postButton.classList.toggle("active", phase === "post");
+    preButton.setAttribute("aria-pressed", String(phase === "pre"));
+    postButton.setAttribute("aria-pressed", String(phase === "post"));
+    if (automatic) {{
+      showToast(
+        "Post-TTS timing is ready. Switched to box-only correction; "
+        + "the Pre-TTS review remains available."
+      );
+    }}
+  }}
+
+  preButton.addEventListener("click", () => {{
+    if (activePhase === "pre") return;
+    const accepted = window.confirm(
+      "Switch to Pre-TTS full review? Changes to narration, target time, "
+      + "or anchor text invalidate the current audio, subtitles, anchor "
+      + "timing, and video. Save there, then rerun those downstream steps."
+    );
+    if (accepted) selectPhase("pre");
+  }});
+  postButton.addEventListener("click", () => selectPhase("post"));
+
+  async function pollPhase() {{
+    try {{
+      const response = await fetch(phaseEndpoint, {{cache:"no-store"}});
+      if (response.ok) {{
+        const value = await response.json();
+        if (value.post_tts_available && !postReady) {{
+          postReady = true;
+          document.body.classList.add("phases-ready");
+          phaseBar.hidden = false;
+          postFrame.src = postFrame.dataset.src;
+          selectPhase("post", true);
+        }}
+      }}
+    }} catch {{
+      // The next poll retries while the local workbench is running.
+    }}
+    window.setTimeout(pollPhase, 1200);
+  }}
+  void pollPhase();
+}})();
+</script>
+</body>
+</html>
+""".encode()
+
+
 class VerdictStateServer(ThreadingHTTPServer):
     daemon_threads = True
 
@@ -116,17 +310,69 @@ class VerdictStateServer(ThreadingHTTPServer):
         server_address: tuple[str, int],
         *,
         page: bytes,
-        state_path: Path,
-        contract: EditorStateContract,
         page_path: str,
-        state_endpoint: str,
+        pre_binding: EditorBinding,
+        post_html_path: Path | None = None,
+        post_state_path: Path | None = None,
+        post_page_path: str | None = None,
+        post_state_endpoint: str | None = None,
+        phase_endpoint: str | None = None,
     ) -> None:
         self.page = page
-        self.state_path = state_path
-        self.contract = contract
         self.page_path = page_path
-        self.state_endpoint = state_endpoint
+        self.pre_binding = pre_binding
+        self.state_path = pre_binding.state_path
+        self.contract = pre_binding.contract
+        self.state_endpoint = pre_binding.state_endpoint
+        self.post_html_path = post_html_path
+        self.post_state_path = post_state_path
+        self.post_page_path = post_page_path
+        self.post_state_endpoint = post_state_endpoint
+        self.phase_endpoint = phase_endpoint
+        self.integrated = post_html_path is not None
+        self._post_binding_cache: EditorBinding | None = None
+        self._post_html_signature: tuple[int, int, int] | None = None
+        self._post_binding_lock = threading.Lock()
         super().__init__(server_address, VerdictStateHandler)
+
+    def post_binding(self) -> EditorBinding | None:
+        if (
+            self.post_html_path is None
+            or self.post_state_path is None
+            or self.post_page_path is None
+            or self.post_state_endpoint is None
+        ):
+            return None
+        if not self.post_html_path.is_file():
+            with self._post_binding_lock:
+                self._post_binding_cache = None
+                self._post_html_signature = None
+            return None
+        stat = self.post_html_path.stat()
+        signature = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+        with self._post_binding_lock:
+            if (
+                self._post_binding_cache is not None
+                and signature == self._post_html_signature
+            ):
+                return self._post_binding_cache
+            binding = _load_binding(
+                self.post_html_path,
+                self.post_state_path,
+                self.post_page_path,
+                self.post_state_endpoint,
+                expected_mode="anchor-overrides",
+            )
+            if (
+                binding.contract.source.get("images")
+                != self.pre_binding.contract.source.get("images")
+            ):
+                raise RuntimeError(
+                    "Post-TTS Verdict belongs to a different slide-image set"
+                )
+            self._post_binding_cache = binding
+            self._post_html_signature = signature
+            return binding
 
 
 class VerdictStateHandler(BaseHTTPRequestHandler):
@@ -151,20 +397,69 @@ class VerdictStateHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(length))
         self.end_headers()
 
+    def _write_json(
+        self,
+        status: HTTPStatus,
+        value: dict,
+    ) -> None:
+        body = (json.dumps(value, ensure_ascii=False) + "\n").encode("utf-8")
+        self._headers(
+            status,
+            "application/json; charset=utf-8",
+            len(body),
+        )
+        self.wfile.write(body)
+
     def _json_error(
         self,
         status: HTTPStatus,
         message: str,
     ) -> None:
-        body = (
-            json.dumps({"error": message}, ensure_ascii=False) + "\n"
-        ).encode("utf-8")
-        self._headers(status, "application/json; charset=utf-8", len(body))
-        self.wfile.write(body)
+        self._write_json(status, {"error": message})
+
+    def _post_binding(self) -> EditorBinding | None:
+        try:
+            return self.server.post_binding()
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError):
+            return None
+
+    def _state_binding(self, path: str) -> EditorBinding | None:
+        if path == self.server.pre_binding.state_endpoint:
+            return self.server.pre_binding
+        if (
+            self.server.integrated
+            and path == self.server.post_state_endpoint
+        ):
+            return self._post_binding()
+        return None
+
+    def _serve_state(self, binding: EditorBinding) -> None:
+        if not binding.state_path.is_file():
+            self._headers(HTTPStatus.NO_CONTENT, length=0)
+            return
+        try:
+            contents = binding.state_path.read_bytes()
+            document = json.loads(contents.decode("utf-8"))
+            validate_editor_state(document, binding.contract)
+        except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+            self._json_error(
+                HTTPStatus.CONFLICT,
+                f"Bound JSON is invalid: {error}",
+            )
+            return
+        self._headers(
+            HTTPStatus.OK,
+            "application/json; charset=utf-8",
+            len(contents),
+        )
+        self.wfile.write(contents)
 
     def do_GET(self) -> None:
         path = self._path()
-        if path in {self.server.page_path, f"{self.server.page_path}index.html"}:
+        if path in {
+            self.server.page_path,
+            f"{self.server.page_path}index.html",
+        }:
             self._headers(
                 HTTPStatus.OK,
                 "text/html; charset=utf-8",
@@ -172,26 +467,57 @@ class VerdictStateHandler(BaseHTTPRequestHandler):
             )
             self.wfile.write(self.server.page)
             return
-        if path == self.server.state_endpoint:
-            if not self.server.state_path.is_file():
-                self._headers(HTTPStatus.NO_CONTENT, length=0)
-                return
+        if (
+            path == self.server.pre_binding.page_path
+            or path == f"{self.server.pre_binding.page_path}index.html"
+        ):
+            self._headers(
+                HTTPStatus.OK,
+                "text/html; charset=utf-8",
+                len(self.server.pre_binding.page),
+            )
+            self.wfile.write(self.server.pre_binding.page)
+            return
+        if self.server.integrated and path == self.server.phase_endpoint:
             try:
-                contents = self.server.state_path.read_bytes()
-                document = json.loads(contents.decode("utf-8"))
-                validate_editor_state(document, self.server.contract)
+                available = self.server.post_binding() is not None
+                self._write_json(
+                    HTTPStatus.OK,
+                    {"post_tts_available": available},
+                )
             except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+                self._write_json(
+                    HTTPStatus.OK,
+                    {
+                        "post_tts_available": False,
+                        "error": str(error),
+                    },
+                )
+            return
+        if (
+            self.server.integrated
+            and (
+                path == self.server.post_page_path
+                or path == f"{self.server.post_page_path}index.html"
+            )
+        ):
+            binding = self._post_binding()
+            if binding is None:
                 self._json_error(
-                    HTTPStatus.CONFLICT,
-                    f"Bound JSON is invalid: {error}",
+                    HTTPStatus.NOT_FOUND,
+                    "Post-TTS Verdict is not ready",
                 )
                 return
             self._headers(
                 HTTPStatus.OK,
-                "application/json; charset=utf-8",
-                len(contents),
+                "text/html; charset=utf-8",
+                len(binding.page),
             )
-            self.wfile.write(contents)
+            self.wfile.write(binding.page)
+            return
+        binding = self._state_binding(path)
+        if binding is not None:
+            self._serve_state(binding)
             return
         if path == "/favicon.ico":
             self._headers(HTTPStatus.NO_CONTENT, length=0)
@@ -199,7 +525,8 @@ class VerdictStateHandler(BaseHTTPRequestHandler):
         self._json_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_PUT(self) -> None:
-        if self._path() != self.server.state_endpoint:
+        binding = self._state_binding(self._path())
+        if binding is None:
             self._json_error(HTTPStatus.NOT_FOUND, "Not found")
             return
         raw_length = self.headers.get("Content-Length")
@@ -222,29 +549,21 @@ class VerdictStateHandler(BaseHTTPRequestHandler):
         try:
             raw = self.rfile.read(length)
             document = json.loads(raw.decode("utf-8"))
-            validate_editor_state(document, self.server.contract)
+            validate_editor_state(document, binding.contract)
             contents = (
                 json.dumps(document, ensure_ascii=False, indent=2) + "\n"
             )
-            atomic_write(self.server.state_path, contents)
+            atomic_write(binding.state_path, contents)
         except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
             self._json_error(HTTPStatus.BAD_REQUEST, str(error))
             return
-        body = (
-            json.dumps(
-                {
-                    "saved": True,
-                    "filename": self.server.state_path.name,
-                }
-            )
-            + "\n"
-        ).encode("utf-8")
-        self._headers(
+        self._write_json(
             HTTPStatus.OK,
-            "application/json; charset=utf-8",
-            len(body),
+            {
+                "saved": True,
+                "filename": binding.state_path.name,
+            },
         )
-        self.wfile.write(body)
 
     def log_message(self, format: str, *args: object) -> None:
         return
@@ -255,32 +574,74 @@ def create_editor_server(
     state_path: Path,
     *,
     port: int = 0,
+    post_html_path: Path | None = None,
+    post_state_path: Path | None = None,
 ) -> tuple[VerdictStateServer, str]:
     html_path = html_path.resolve()
     state_path = state_path.resolve()
-    if not html_path.is_file():
-        raise RuntimeError(f"Verdict HTML does not exist: {html_path}")
     if not 0 <= port <= 65535:
         raise RuntimeError("Editor port must be between 0 and 65535")
-    html_contents = html_path.read_text(encoding="utf-8")
-    contract = editor_state_contract(html_contents)
-    if state_path.is_file():
-        validate_editor_state(
-            json.loads(state_path.read_text(encoding="utf-8")),
-            contract,
-        )
+    if (post_html_path is None) != (post_state_path is None):
+        raise RuntimeError("--post-html and --post-state must be used together")
     token = secrets.token_urlsafe(24)
     page_path = f"/{token}/"
-    state_endpoint = f"/{token}/state"
-    page = _bound_html(html_contents, state_endpoint, state_path)
-    server = VerdictStateServer(
-        ("127.0.0.1", port),
-        page=page,
-        state_path=state_path,
-        contract=contract,
-        page_path=page_path,
-        state_endpoint=state_endpoint,
-    )
+    if post_html_path is None:
+        state_endpoint = f"/{token}/state"
+        pre_binding = _load_binding(
+            html_path,
+            state_path,
+            page_path,
+            state_endpoint,
+        )
+        page = pre_binding.page
+        server = VerdictStateServer(
+            ("127.0.0.1", port),
+            page=page,
+            page_path=page_path,
+            pre_binding=pre_binding,
+        )
+    else:
+        post_html_path = post_html_path.resolve()
+        post_state_path = post_state_path.resolve()
+        pre_page_path = f"/{token}/pre/"
+        pre_state_endpoint = f"/{token}/pre/state"
+        post_page_path = f"/{token}/post/"
+        post_state_endpoint = f"/{token}/post/state"
+        phase_endpoint = f"/{token}/phase"
+        pre_binding = _load_binding(
+            html_path,
+            state_path,
+            pre_page_path,
+            pre_state_endpoint,
+            expected_mode="deck-review",
+        )
+        page = _workbench_html(
+            pre_page_path,
+            post_page_path,
+            phase_endpoint,
+        )
+        server = VerdictStateServer(
+            ("127.0.0.1", port),
+            page=page,
+            page_path=page_path,
+            pre_binding=pre_binding,
+            post_html_path=post_html_path,
+            post_state_path=post_state_path,
+            post_page_path=post_page_path,
+            post_state_endpoint=post_state_endpoint,
+            phase_endpoint=phase_endpoint,
+        )
+        if post_html_path.is_file():
+            try:
+                server.post_binding()
+            except (
+                OSError,
+                RuntimeError,
+                ValueError,
+                json.JSONDecodeError,
+            ):
+                server.server_close()
+                raise
     actual_port = int(server.server_address[1])
     return server, f"http://127.0.0.1:{actual_port}{page_path}"
 
@@ -291,12 +652,22 @@ def serve_editor(
     *,
     port: int = 0,
     open_browser: bool = True,
+    post_html_path: Path | None = None,
+    post_state_path: Path | None = None,
 ) -> None:
-    server, url = create_editor_server(html_path, state_path, port=port)
-    print(f"Verdict panel: {url}", flush=True)
+    server, url = create_editor_server(
+        html_path,
+        state_path,
+        port=port,
+        post_html_path=post_html_path,
+        post_state_path=post_state_path,
+    )
+    label = "Verdict workbench" if server.integrated else "Verdict panel"
+    print(f"{label}: {url}", flush=True)
     print(f"Bound JSON: {server.state_path}", flush=True)
     print(
-        "Save overwrites that JSON; Reset restores its generated initial state.",
+        "Save overwrites the active phase's JSON; "
+        "Reset restores its generated initial state.",
         flush=True,
     )
     print(

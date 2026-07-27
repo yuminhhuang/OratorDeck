@@ -458,6 +458,30 @@ def test_anchor_verdict_html_is_a_self_contained_restricted_slide_editor(
     assert '"mode":"anchor-overrides"' in report
 
 
+def test_post_verdict_command_can_reopen_one_pre_and_post_workbench(
+    tmp_path: Path,
+) -> None:
+    command = video.verdict_editor_command(
+        Path("/opt/oratordeck/python"),
+        tmp_path / "video" / "anchor-verdict.html",
+        tmp_path / "video" / "anchor-overrides.json",
+        pre_verdict_path=tmp_path / "deck-verdict.html",
+        pre_state_path=tmp_path / "deck-review.json",
+    )
+
+    assert (
+        '-m oratordeck_verdict edit '
+        f'"{tmp_path / "deck-verdict.html"}" '
+        f'"{tmp_path / "deck-review.json"}"'
+    ) in command
+    assert (
+        f'--post-html "{tmp_path / "video" / "anchor-verdict.html"}"'
+    ) in command
+    assert (
+        f'--post-state "{tmp_path / "video" / "anchor-overrides.json"}"'
+    ) in command
+
+
 def override_source(slide_plans: list[dict], chunks_sha256: str) -> dict:
     return video.anchor_override_source(slide_plans, chunks_sha256)
 

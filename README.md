@@ -24,7 +24,9 @@ An optional **Deck Verdict** panel lets you flip through the presentation,
 edit narration and bold anchors, and correct anchor boxes directly on each
 slide image. The one-command workflow does not wait for this review: ignore the
 panel, or inspect it while the GPU steps run and restart only when a correction
-matters.
+matters. It begins as a pre-TTS full review. Once subtitle-aware anchor timing
+is ready, the same panel automatically switches to post-TTS box correction and
+reveals a control for moving between the two phases.
 
 ![Deck Verdict: page through the presentation, edit anchor boxes, and spot review issues by color](docs/assets/oratordeck-verdict-panel.png)
 
@@ -182,7 +184,7 @@ scripts/generate-keynote-workflow.sh
 This single command generates the audio, subtitles, anchor cues, and final
 video in a timestamped directory under `data/runs/`.
 
-The optional Deck Verdict panel opens in the background while generation
+The optional Deck Verdict workbench opens in pre-TTS mode while generation
 continues. You may ignore it, or review the deck while waiting for the GPU
 steps:
 
@@ -193,9 +195,16 @@ steps:
 - click **Save deck review** to keep your changes;
 - click **Reset** to restore the panel's initial state.
 
-Saved changes do not alter a run already in progress. If they matter, save,
-interrupt the current run, and run the workflow again. A review that already
-exists when the command starts is applied to that run.
+The post-TTS phase is not shown until corrected subtitle timing and the final
+anchor plan are available. The workbench then switches to it automatically.
+This phase locks narration and anchors but lets you correct the boxes using the
+actual timing diagnostics. You can switch between phases afterward. Switching
+back to pre-TTS warns that semantic changes require rerunning audio, subtitles,
+anchor planning, and video.
+
+A pre-TTS save does not alter a run already in progress. If it matters, save,
+interrupt, and rerun the workflow. A post-TTS box save can instead be applied
+by rerendering the existing run without repeating TTS or subtitles.
 
 Use the editor command printed by the workflow whenever you need to reopen the
 panel. Opening the HTML directly is read-only. Set
@@ -253,16 +262,20 @@ data/runs/my-talk-YYYYMMDD-HHMMSS/
 The main deliverable is `video/my-talk.mp4`. The workflow also retains
 per-slide media and diagnostic files in the same run directory.
 
-After the video is generated, `video/anchor-verdict.html` provides a second,
-box-only review. Narration and anchors are locked at this stage, but you can
-move, resize, create, restore, or suppress underline boxes.
+`video/anchor-verdict.html` is the post-TTS phase payload for the same Deck
+Verdict workbench. Narration and anchors are locked in that phase, but you can
+move, resize, create, restore, or suppress underline boxes. The phase remains
+invisible until this payload is complete, then the open workbench selects it
+automatically.
 
-Open it with:
+Reopen both phases in one workbench with:
 
 ```bash
 .venv/bin/python -m oratordeck_verdict edit \
-  data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-verdict.html \
-  data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-overrides.json
+  resources/.oratordeck/deck-verdict.html \
+  resources/.oratordeck/deck-review.json \
+  --post-html data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-verdict.html \
+  --post-state data/runs/my-talk-YYYYMMDD-HHMMSS/video/anchor-overrides.json
 ```
 
 After saving box corrections, rerender the existing run without repeating TTS
@@ -275,8 +288,8 @@ or subtitle generation:
   --overwrite
 ```
 
-To change narration, target times, or bold anchors, return to the first Deck
-Verdict panel and start a new media run.
+To change narration, target times, or bold anchors, switch the workbench back
+to pre-TTS, save, and start a new media run.
 
 ## Current limitations
 
