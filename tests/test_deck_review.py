@@ -266,6 +266,58 @@ def test_default_workflow_offers_verdict_without_blocking_tts() -> None:
     assert '--ocr-output "$input_dir/deck-ocr.json"' in workflow
     assert '--ocr-results "$input_dir/deck-ocr.json"' in workflow
     assert "-m oratordeck_verdict edit" in workflow
+    assert 'echo "Video: $video_dir/$run_name.mp4"' in workflow
+
+
+def test_default_workflow_keeps_the_complete_generation_contract() -> None:
+    workflow = (
+        Path(__file__).resolve().parents[1]
+        / "scripts"
+        / "generate-keynote-workflow.sh"
+    ).read_text(encoding="utf-8")
+
+    required_fragments = (
+        'data/runs/${run_name}-$(date +%Y%m%d-%H%M%S)',
+        'cp resources/SPEAKER_NOTES.md "$input_dir/"',
+        'cp -a resources/generated-images/. "$images_dir/"',
+        'exec > >(tee "$run_dir/workflow.log") 2>&1',
+        '--chunks-output "$input_dir/SPEAKER_NOTES_CHUNKS.json"',
+        '--tts-output "$input_dir/SPEAKER_NOTES_TTS.txt"',
+        '--anchor-overrides-output "$input_dir/anchor-overrides.json"',
+        'scripts/generate-english-keynote.py',
+        "--url http://127.0.0.1:17493",
+        '--output "$audio_dir/$run_name.wav"',
+        "scripts/generate-english-subtitles.py",
+        "--model turbo",
+        "--device cuda",
+        '--reference "$input_dir/SPEAKER_NOTES_TTS.txt"',
+        '--output-prefix "$subtitles_dir/$run_name"',
+        "scripts/generate-keynote-video.py",
+        '"$input_dir/SPEAKER_NOTES_CHUNKS.json"',
+        '"$audio_dir/$run_name.timing.json"',
+        '"$images_dir"',
+        '--subtitles "$subtitles_dir/$run_name.srt"',
+        '"${anchor_override_args[@]}"',
+        '"${ocr_results_args[@]}"',
+        '--work-dir "$video_dir"',
+        '--animation-cues-output "$video_dir/anchor-animation-cues.json"',
+        '--anchor-verdict-output "$post_tts_verdict_file"',
+        '--pre-verdict-html "$deck_verdict_file"',
+        '--pre-verdict-state "$deck_review_file"',
+        '--output "$video_dir/$run_name.mp4"',
+        "--overwrite",
+    )
+    for fragment in required_fragments:
+        assert fragment in workflow
+
+    stage_commands = (
+        "scripts/format-speaker-notes-chunks.py",
+        "scripts/generate-english-keynote.py",
+        "scripts/generate-english-subtitles.py",
+        "scripts/generate-keynote-video.py",
+    )
+    indexes = [workflow.index(command) for command in stage_commands]
+    assert indexes == sorted(indexes)
 
 
 def test_review_requires_exact_slide_image_set() -> None:
@@ -358,6 +410,13 @@ def test_pre_tts_editor_has_explicit_save_reset_and_editable_text() -> None:
     assert ".anchor-item.status-corrected" in document
     assert "function anchorListStatus(anchor)" in document
     assert "function anchorListSummary(anchor, status)" in document
+    assert 'aria-label="Deck anchor statistics"' in document
+    assert "statuses[anchorListStatus(anchor).key] += 1" in document
+    assert "status-pass" in document
+    assert "status-review" in document
+    assert "status-unresolved" in document
+    assert "status-corrected" in document
+    assert "status-suppressed" in document
     assert "Low OCR confidence" in document
     assert "Ambiguous OCR candidates" in document
     assert 'class="anchor-legend"' in document
@@ -838,6 +897,10 @@ def test_state_bound_editor_browser_save_refresh_and_reset(
   document.body.dataset.harnessAnchorStatuses = anchorItems
     .map(item => item.querySelector(".anchor-status").textContent)
     .join("|");
+  document.body.dataset.harnessAnchorStatistics =
+    [...document.querySelectorAll("#deck-status .metric")]
+      .map(item => item.textContent.trim())
+      .join("|");
   document.body.dataset.harnessAnchorSummaries = anchorItems
     .map(item => item.querySelector(".anchor-summary").textContent)
     .join("|");
@@ -883,6 +946,11 @@ def test_state_bound_editor_browser_save_refresh_and_reset(
         assert (
             'data-harness-anchor-statuses="'
             'Pass|Review|Unresolved|Corrected|Suppressed"'
+        ) in saved_page
+        assert (
+            'data-harness-anchor-statistics="'
+            '1 slides|5 anchors|1 pass|1 review|1 unresolved|'
+            '1 corrected|1 suppressed"'
         ) in saved_page
         assert (
             "Low OCR confidence · Ambiguous OCR candidates"

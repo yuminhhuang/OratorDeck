@@ -155,6 +155,7 @@ fi
   --overwrite
 
 echo "Completed: $run_dir"
+echo "Video: $video_dir/$run_name.mp4"
 echo "Reopen the unified Deck Verdict workbench:"
 echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\" --post-html \"$post_tts_verdict_file\" --post-state \"$post_tts_review_file\""
 echo "After post-TTS Save updates $post_tts_review_file, rerender with:"

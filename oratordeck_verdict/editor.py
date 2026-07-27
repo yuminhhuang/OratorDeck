@@ -93,7 +93,10 @@ def build_deck_review_html(payload: dict) -> str:
     .brand { min-width:210px; }
     .brand strong { display:block; font-size:17px; }
     .brand span { color:var(--muted); font-size:11px; }
-    .deck-status { display:flex; gap:7px; flex:1; min-width:0; overflow:hidden; }
+    .deck-status {
+      display:flex; gap:7px; flex:1; min-width:0;
+      overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
+    }
     .state-binding {
       flex:0 0 auto; max-width:250px; overflow:hidden; text-overflow:ellipsis;
       white-space:nowrap; color:var(--muted); font-size:11px;
@@ -106,6 +109,11 @@ def build_deck_review_html(payload: dict) -> str:
       background:#f2f4f7; color:var(--muted); font-size:11px;
     }
     .metric b { color:var(--ink); }
+    .metric.status-pass b { color:var(--pass); }
+    .metric.status-review b { color:var(--review); }
+    .metric.status-unresolved b { color:var(--danger); }
+    .metric.status-corrected b { color:var(--corrected); }
+    .metric.status-suppressed b { color:#475467; }
     .top-actions { display:flex; gap:7px; align-items:center; }
     .filmstrip {
       grid-row:2; overflow:auto; padding:10px 9px 24px;
@@ -830,26 +838,22 @@ def build_deck_review_html(payload: dict) -> str:
 
       function renderTopbar() {
         const totalAnchors = slides.reduce((count, slide) => count + slide.anchors.length, 0);
-        const missing = slides.reduce(
-          (count, slide) => count + slide.anchors.filter(
-            anchor => !anchor.box && anchor.box_source !== "suppress"
-          ).length,
-          0
-        );
-        const manual = slides.reduce(
-          (count, slide) => count + slide.anchors.filter(anchor => anchor.box_source === "manual").length,
-          0
-        );
-        const suppressed = slides.reduce(
-          (count, slide) => count + slide.anchors.filter(anchor => anchor.box_source === "suppress").length,
-          0
-        );
+        const statuses = {
+          pass:0, review:0, unresolved:0, corrected:0, suppressed:0
+        };
+        for (const slide of slides) {
+          for (const anchor of slide.anchors) {
+            statuses[anchorListStatus(anchor).key] += 1;
+          }
+        }
         document.getElementById("deck-status").innerHTML =
           `<span class="metric"><b>${slides.length}</b> slides</span>` +
           `<span class="metric"><b>${totalAnchors}</b> anchors</span>` +
-          `<span class="metric"><b>${manual}</b> edited boxes</span>` +
-          `<span class="metric"><b>${suppressed}</b> suppressed</span>` +
-          `<span class="metric"><b>${missing}</b> without boxes</span>`;
+          `<span class="metric status-pass"><b>${statuses.pass}</b> pass</span>` +
+          `<span class="metric status-review"><b>${statuses.review}</b> review</span>` +
+          `<span class="metric status-unresolved"><b>${statuses.unresolved}</b> unresolved</span>` +
+          `<span class="metric status-corrected"><b>${statuses.corrected}</b> corrected</span>` +
+          `<span class="metric status-suppressed"><b>${statuses.suppressed}</b> suppressed</span>`;
         document.getElementById("slide-position").textContent =
           `Slide ${slideIndex + 1} of ${slides.length}`;
         document.getElementById("previous-slide").disabled = slideIndex === 0;
@@ -1446,7 +1450,7 @@ def build_deck_review_html(payload: dict) -> str:
 <div class="app">
   <header class="topbar">
     <div class="brand"><strong>{title}</strong><span id="brand-subtitle">Restricted slide editor</span></div>
-    <div class="deck-status" id="deck-status"></div>
+    <div class="deck-status" id="deck-status" aria-label="Deck anchor statistics"></div>
     <div class="state-binding" id="state-binding">Connecting JSON…</div>
     <div class="top-actions">
       <button id="reset-editor">Reset</button>
