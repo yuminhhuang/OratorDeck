@@ -22,6 +22,8 @@ SRT、WebVTT 和 LRC 文件提供。
 修正锚点框。一键工作流不会等待审阅：你可以忽略面板，也可以在 GPU steps 运行期间
 检查；只有发现值得修正的问题时才需要中断并重跑。
 
+![Deck Verdict：逐页审阅演示、编辑锚点框，并通过颜色快速发现问题](docs/assets/oratordeck-verdict-panel.png)
+
 OratorDeck 分为三个可以独立使用、也可以组合的模块：
 
 1. **Skill 辅助创作：**可选的 [`oratordeck`](skills/oratordeck) skill 把逐页 prompts

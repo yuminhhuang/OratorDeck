@@ -26,6 +26,8 @@ slide image. The one-command workflow does not wait for this review: ignore the
 panel, or inspect it while the GPU steps run and restart only when a correction
 matters.
 
+![Deck Verdict: page through the presentation, edit anchor boxes, and spot review issues by color](docs/assets/oratordeck-verdict-panel.png)
+
 OratorDeck has three independently usable, composable parts:
 
 1. **Skill-assisted authoring:** the optional
