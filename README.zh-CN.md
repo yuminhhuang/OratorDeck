@@ -28,18 +28,19 @@ SRT、WebVTT 和 LRC 文件提供。
 
 OratorDeck 分为三个可以独立使用、也可以组合的模块：
 
-1. **Skill 辅助创作：**可选的 [`oratordeck`](skills/oratordeck) skill 把逐页 prompts
-   转换为相互对齐的 slide 图片和同步讲稿。
+1. **Skill 辅助创作：**可选的 [`oratordeck`](skills/oratordeck) skill 使用
+   **Prompt-as-Slide (PasS) 协议**——以一份权威、自包含的 Markdown prompt 定义一张
+   slide——创建相互对齐的 slide 图片和同步讲稿。
 2. **独立审校：**可单独安装的 `oratordeck-verdict` 面板可以在没有 Agent 或 GPU 的
    环境中审查图片、讲稿、锚点、预期时间和锚点框。
 3. **媒体生成：**仓库工作流把准备好的图片和讲稿转换为音频、字幕、锚点 cues 和最终
    标注视频。
 
 ```text
-逐页 prompts → 图片＋讲稿 ──────────────→ 演讲视频
- 可选 Agent          │                    GPU 媒体环境
-                     └→ 可选 Deck Verdict
-                           仅 CPU/浏览器
+PasS prompts → 图片＋讲稿 ───────────────→ 演讲视频
+ 可选 Agent       │                        GPU 媒体环境
+                  └→ 可选 Deck Verdict
+                        仅 CPU/浏览器
 ```
 
 ## OratorDeck 适合你吗？
@@ -49,7 +50,7 @@ OratorDeck 分为三个可以独立使用、也可以组合的模块：
 | 你的主要目标 | 更合适的起点 |
 | --- | --- |
 | 使用相互对齐的 slide 图片和讲稿制作长篇英文演讲，并在读到可见短语时为其添加下划线 | **OratorDeck** |
-| 现在用 prompts 创建 slide 图片和同步讲稿，稍后或换一台设备再生成媒体 | 可选的 **OratorDeck skill** |
+| 现在用 Prompt-as-Slide 创建 slide 图片和同步讲稿，稍后或换一台设备再生成媒体 | 可选的 **OratorDeck skill** |
 | 不使用 Agent 或 GPU，审查图片与讲稿的一致性、加粗锚点、时间目标及锚点框 | 独立的 **OratorDeck Verdict** 包 |
 | 通过 GUI 或 Agent 制作并手工调整原生、可编辑的 PPTX | [Presenton](https://github.com/presenton/presenton) 或 [PPT Master](https://github.com/hugohe3/ppt-master) |
 | 从研究论文 PDF 直接生成带烧录字幕和区域视觉提示的短篇研究视频 | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
@@ -64,9 +65,12 @@ OratorDeck 是专注于演讲视频的命令行工作流，不是通用 PowerPoi
 OratorDeck 的输入格式。没有本地 GPU 的设备可以使用创作 skill 和/或 Deck Verdict；
 没有 Agent 的 GPU 工作站则可以使用 Deck Verdict 与媒体生成。
 
-## 方式一：从逐页 prompts 开始
+## 方式一：使用 Prompt-as-Slide (PasS)
 
-为每张 slide 创建一份自包含 Markdown prompt：
+PasS 使用一份自包含 Markdown prompt 作为一张 slide 的权威定义，其中包含该页的目的、
+准确可见文字、构图和证据边界；slide 图片与同步讲稿都从这个共同源派生。
+
+为每张 slide 创建一份 PasS 源文件：
 
 ```text
 resources/
@@ -76,8 +80,7 @@ resources/
 └── ...
 ```
 
-每份 prompt 应描述该页的目的、内容、布局和需要准确显示的文字。如果手中只有大纲，
-skill 可以帮助你把它改写成逐页 prompts。
+如果手中只有大纲，skill 可以帮助你把它改写成一组论证连贯、顺序明确的 PasS 源文件。
 
 从以下地址安装 [`oratordeck`](skills/oratordeck) skill：
 
@@ -88,8 +91,8 @@ https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck
 然后告诉 Codex：
 
 ```text
-Use $oratordeck with my per-slide prompts to generate the slide images and
-synchronized English speaker notes.
+Use $oratordeck to apply the Prompt-as-Slide (PasS) protocol to my presentation
+and generate aligned slide images with synchronized English speaker notes.
 ```
 
 skill 会停在图片和讲稿准备、审查完成之后，不会安装或运行本地媒体环境。事实、数字、
@@ -185,6 +188,8 @@ scripts/generate-keynote-workflow.sh
 
 TTS 前 Save 不会改变已经运行中的任务；如果修改有必要，应 Save、中断当前任务并重新
 运行。TTS 后 Save 的 box 修正则可以直接用于重渲染现有 run，无需重复 TTS 或字幕。
+工作流结束时会在醒目的 **Deck Verdict — Next Steps After Save** 区块中再次给出两条
+准确命令，避免它们淹没在生成日志里。
 
 需要重新打开面板时，请使用工作流输出的编辑器命令。直接打开 HTML 时面板只读。如果
 不希望自动打开浏览器，可以在工作流脚本中设置

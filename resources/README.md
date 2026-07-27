@@ -42,7 +42,8 @@ python -m pip install \
 ```
 
 For skill-assisted authoring, install or invoke
-[`oratordeck`](../skills/oratordeck). It uses one
-private `resources/slide-NN_slug.md` source per slide, then derives the images
-and `SPEAKER_NOTES.md` from those shared sources. Prompt sources matching
-`resources/slide-*.md` are also ignored by Git.
+[`oratordeck`](../skills/oratordeck). It implements the Prompt-as-Slide (PasS)
+protocol: one private `resources/slide-NN_slug.md` source defines one slide,
+then derives the image and corresponding `SPEAKER_NOTES.md` section from that
+shared source. PasS sources matching `resources/slide-*.md` are also ignored
+by Git.

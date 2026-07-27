@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit prompt-defined slide sources, generated images, and synchronized notes."""
+"""Audit Prompt-as-Slide sources, generated images, and synchronized notes."""
 
 from __future__ import annotations
 
@@ -606,7 +606,7 @@ def print_human(report: dict) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit prompt-defined Markdown sources and optional speaker notes/images."
+            "Audit Prompt-as-Slide Markdown sources and optional speaker notes/images."
         )
     )
     parser.add_argument("--prompts-dir", type=Path, required=True)

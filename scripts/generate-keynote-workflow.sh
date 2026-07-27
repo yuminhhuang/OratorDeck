@@ -76,6 +76,8 @@ else
   echo "No saved review existed at launch, so this run continues from the source inputs."
   echo "Review is optional; Save, then interrupt and rerun only if corrections are needed."
 fi
+echo "Pre-TTS Save requires a complete new run:"
+echo "  \"$repo_dir/scripts/generate-keynote-workflow.sh\""
 
 # 1. Apply the review snapshot captured at launch, or format the source directly.
 if [[ "$review_available_at_start" == true ]]; then
@@ -158,8 +160,20 @@ echo "Completed: $run_dir"
 echo "Video: $video_dir/$run_name.mp4"
 echo "Reopen the unified Deck Verdict workbench:"
 echo "  ./.venv/bin/python -m oratordeck_verdict edit \"$deck_verdict_file\" \"$deck_review_file\" --post-html \"$post_tts_verdict_file\" --post-state \"$post_tts_review_file\""
-echo "After post-TTS Save updates $post_tts_review_file, rerender with:"
-echo "  .venv/bin/python scripts/generate-keynote-video.py --rerender-from-report \"$video_dir/anchor-video-report.json\" --anchor-overrides \"$post_tts_review_file\" --overwrite"
 if [[ -n "$verdict_server_pid" ]]; then
   echo "The background workbench closes now; use its printed command to reopen both phases."
 fi
+
+echo
+echo "========================================================================"
+echo "DECK VERDICT — NEXT STEPS AFTER SAVE"
+echo "========================================================================"
+echo "PRE-TTS · Save deck review"
+echo "  Starts a complete new timestamped run because narration, timing, anchors,"
+echo "  and pre-TTS boxes may have changed:"
+echo "    \"$repo_dir/scripts/generate-keynote-workflow.sh\""
+echo
+echo "POST-TTS · Save box overrides"
+echo "  Keeps the existing TTS and subtitles; rerenders this run's video only:"
+echo "    ./.venv/bin/python scripts/generate-keynote-video.py --rerender-from-report \"$video_dir/anchor-video-report.json\" --anchor-overrides \"$post_tts_review_file\" --overwrite"
+echo "========================================================================"

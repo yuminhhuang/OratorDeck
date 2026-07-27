@@ -33,8 +33,9 @@ reveals a control for moving between the two phases.
 OratorDeck has three independently usable, composable parts:
 
 1. **Skill-assisted authoring:** the optional
-   [`oratordeck`](skills/oratordeck) skill turns per-slide prompts into aligned
-   slide images and synchronized speaker notes.
+   [`oratordeck`](skills/oratordeck) skill uses the **Prompt-as-Slide (PasS)
+   protocol**—one authoritative, self-contained Markdown prompt per slide—to
+   create aligned slide images and synchronized speaker notes.
 2. **Standalone review:** the separately installable `oratordeck-verdict`
    panel reviews prepared images, narration, anchors, target times, and anchor
    boxes without an Agent or GPU.
@@ -43,10 +44,10 @@ OratorDeck has three independently usable, composable parts:
    video.
 
 ```text
-per-slide prompts → images + speaker notes ───────────────→ narrated video
-  optional Agent             │                              GPU media runtime
-                             └→ optional Deck Verdict
-                                  CPU/browser only
+PasS prompts → images + speaker notes ───────────────────→ narrated video
+ optional Agent          │                                  GPU media runtime
+                         └→ optional Deck Verdict
+                              CPU/browser only
 ```
 
 ## Is OratorDeck right for you?
@@ -56,7 +57,7 @@ Use this quick guide:
 | Your main goal | Best starting point |
 | --- | --- |
 | Produce a long-form English presentation from aligned slide images and speaker notes, with visible phrases underlined as they are spoken | **OratorDeck** |
-| Create prompt-defined slide images and synchronized notes now, then generate media later or on another device | The optional **OratorDeck skill** |
+| Create Prompt-as-Slide images and synchronized notes now, then generate media later or on another device | The optional **OratorDeck skill** |
 | Review slide–narration consistency, bold anchors, timing goals, and anchor boxes without an Agent or GPU | The standalone **OratorDeck Verdict** package |
 | Build and manually refine a native, editable PPTX through a GUI or an Agent | [Presenton](https://github.com/presenton/presenton) or [PPT Master](https://github.com/hugohe3/ppt-master) |
 | Turn a research-paper PDF directly into a short narrated research video with burned-in captions and region-based visual cues | [ResearchStudio Paper2Video](https://github.com/microsoft/ResearchStudio/tree/main/ResearchStudio-Reel/skills/paper2video) |
@@ -74,9 +75,14 @@ export its slide images and adapt its notes to OratorDeck's input contract. A
 device without a local GPU can use the authoring skill and/or Deck Verdict; a
 GPU workstation without an Agent can use Deck Verdict and media generation.
 
-## Option 1: Start from per-slide prompts
+## Option 1: Start with Prompt-as-Slide (PasS)
 
-Create one self-contained Markdown prompt per slide:
+Under PasS, one self-contained Markdown prompt is the authoritative definition
+of one slide: its purpose, exact visible wording, composition, and evidence
+boundaries. The slide image and synchronized speaker notes are derived from
+that shared source.
+
+Create one PasS source per slide:
 
 ```text
 resources/
@@ -86,9 +92,8 @@ resources/
 └── ...
 ```
 
-Each prompt should describe the slide's purpose, content, layout, and exact
-visible wording. If you only have an outline, the skill can help turn it into
-per-slide prompts.
+If you only have an outline, the skill can help turn it into a coherent ordered
+set of PasS sources.
 
 Install the [`oratordeck`](skills/oratordeck) skill from:
 
@@ -99,8 +104,8 @@ https://github.com/yuminhhuang/OratorDeck/tree/main/skills/oratordeck
 Then ask Codex:
 
 ```text
-Use $oratordeck with my per-slide prompts to generate the slide images and
-synchronized English speaker notes.
+Use $oratordeck to apply the Prompt-as-Slide (PasS) protocol to my presentation
+and generate aligned slide images with synchronized English speaker notes.
 ```
 
 The skill stops after preparing and auditing the prompts, images, and speaker
@@ -205,6 +210,9 @@ anchor planning, and video.
 A pre-TTS save does not alter a run already in progress. If it matters, save,
 interrupt, and rerun the workflow. A post-TTS box save can instead be applied
 by rerendering the existing run without repeating TTS or subtitles.
+At completion, the workflow repeats both exact commands in a prominent
+**Deck Verdict — Next Steps After Save** block, so they do not get lost in the
+generation log.
 
 Use the editor command printed by the workflow whenever you need to reopen the
 panel. Opening the HTML directly is read-only. Set

@@ -1,9 +1,9 @@
 # Installation
 
-OratorDeck's three modules have different requirements. The authoring skill
-needs an Agent with image-generation access, Deck Verdict needs only Python,
-CPU OCR, and a browser, while long-form local media generation is designed for
-Linux, Python 3.11, and an NVIDIA CUDA GPU.
+OratorDeck's three modules have different requirements. The Prompt-as-Slide
+(PasS) authoring skill needs an Agent with image-generation access, Deck
+Verdict needs only Python, CPU OCR, and a browser, while long-form local media
+generation is designed for Linux, Python 3.11, and an NVIDIA CUDA GPU.
 
 ## Install only Deck Verdict
 
@@ -189,9 +189,12 @@ existed, generation proceeds from the source inputs without waiting. Saving
 during that run does not mutate its snapshot; interrupt and rerun only when the
 corrections should replace the in-flight output. Set
 `open_pre_tts_verdict=false` to suppress automatic browser launch while still
-preparing the panel and printing its command. The final line prints the
-timestamped run directory; the MP4 and all intermediate artifacts are stored
-together below `data/runs/`.
+preparing the panel and printing its command. The workflow prints the
+timestamped run directory and MP4 path, then ends with a prominent
+`DECK VERDICT — NEXT STEPS AFTER SAVE` block. That block gives one exact
+command for a new full run after a pre-TTS save and another for video-only
+rerendering after a post-TTS save. All intermediate artifacts remain together
+below `data/runs/`.
 
 The post-TTS phase keeps narration and anchors read-only. **Save box
 overrides** overwrites `video/anchor-overrides.json`, while **Reset** writes

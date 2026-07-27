@@ -224,6 +224,9 @@ def test_builds_ordered_generation_manifest(tmp_path: Path) -> None:
 def test_skill_scope_stops_at_images_and_speaker_notes() -> None:
     skill = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
     handoff = (SKILL_DIR / "references" / "oratordeck-handoff.md").read_text(encoding="utf-8")
+    prompt_contract = (
+        SKILL_DIR / "references" / "prompt-contract.md"
+    ).read_text(encoding="utf-8")
     interface = (SKILL_DIR / "agents" / "openai.yaml").read_text(encoding="utf-8")
     bundled_markdown = "\n".join(
         path.read_text(encoding="utf-8") for path in sorted(SKILL_DIR.rglob("*.md"))
@@ -231,11 +234,14 @@ def test_skill_scope_stops_at_images_and_speaker_notes() -> None:
     normalized_handoff = " ".join(handoff.split())
 
     assert "name: oratordeck" in skill
+    assert "Prompt-as-Slide (PasS)" in skill
+    assert "# Prompt-as-Slide (PasS) Protocol" in prompt_contract
     assert "This skill ends after it has produced and audited" in skill
     assert "outside this skill" in skill
     assert "Do not produce" in skill
     assert "does not need the skill at runtime" in normalized_handoff
-    assert "Create aligned slide images and speaker notes" in interface
+    assert "Create slides with the Prompt-as-Slide protocol" in interface
+    assert "Prompt-as-Slide (PasS)" in interface
     assert "Use $oratordeck " in interface
     assert "OratorDeck video" not in interface
     assert "./.venv/bin/python" not in bundled_markdown
@@ -274,7 +280,8 @@ def test_readmes_present_three_composable_modules_with_language_switching() -> N
     assert "three independently usable, composable" in readme
     assert "oratordeck-verdict" in readme
     assert "[`oratordeck`](skills/oratordeck)" in readme
-    assert "Use $oratordeck with my per-slide prompts" in readme
+    assert "Use $oratordeck to apply the Prompt-as-Slide (PasS)" in readme
+    assert "Prompt-as-Slide (PasS)" in readme_zh
     assert "The skill stops after preparing and auditing" in readme
     assert "Neither the skill nor an Agent" in readme
     assert "## OratorDeck 能做什么？" not in readme

@@ -14,8 +14,9 @@ start with the main [README](../README.md).
 
 OratorDeck has three file-composable modules:
 
-1. The optional OratorDeck skill turns authoritative per-slide Markdown
-   prompts into aligned slide images and speaker notes.
+1. The optional OratorDeck skill implements the Prompt-as-Slide (PasS)
+   protocol: one authoritative, self-contained Markdown prompt defines one
+   slide and derives its aligned image and speaker notes.
 2. The installable OratorDeck Verdict package uses CPU OCR and a self-contained
    browser editor to review aligned images, notes, anchors, timing goals, and
    normalized rectangles.
@@ -27,7 +28,7 @@ depends on neither the Agent layer nor the GPU media layer. SHA-bound files are
 the only handoff between modules.
 
 ```text
-slide-NN_slug.md prompts
+slide-NN_slug.md PasS sources
           │
           ├──> prompt manifest ──> image generation ──> slide images ──────┐
           │
@@ -78,12 +79,13 @@ slide-NN_slug.md prompts
 - Generated media, models, caches, and private presentation inputs are ignored
   by Git.
 
-### Stage 0: skill-assisted authoring
+### Stage 0: Prompt-as-Slide authoring
 
 The installable skill is located at
 `skills/oratordeck/`.
 
-Each `slide-NN_slug.md` source contains:
+Under the Prompt-as-Slide (PasS) protocol, each `slide-NN_slug.md` source is
+the authoritative definition of exactly one slide. It contains:
 
 - a presentation or defense role;
 - an audience takeaway;
@@ -563,8 +565,8 @@ hashing, progressive reports, and explicit quality failures.
 
 OratorDeck 分为三个通过文件组合的模块：
 
-1. 可选的 OratorDeck skill 把权威的逐页 Markdown prompts 转换为相互一致的 slide
-   图片和讲稿。
+1. 可选的 OratorDeck skill 实现 Prompt-as-Slide (PasS) 协议：一份权威、自包含的
+   Markdown prompt 定义一张 slide，并派生其相互一致的图片和讲稿。
 2. 可安装的 OratorDeck Verdict 包使用 CPU OCR 和自包含浏览器编辑器审查图片、讲稿、
    锚点、时间目标与归一化矩形框。
 3. 独立媒体流水线把原始或已经审校的图片与讲稿转换为音频、字幕、带标注的逐页片段和
@@ -574,7 +576,7 @@ OratorDeck 分为三个通过文件组合的模块：
 层。三个模块只通过带 SHA 绑定的普通文件交接。
 
 ```text
-slide-NN_slug.md prompts
+slide-NN_slug.md PasS 源
           │
           ├──> prompt manifest ──> 图片生成 ──> slide 图片 ──────┐
           │
@@ -620,11 +622,12 @@ slide-NN_slug.md prompts
 - SHA-256 用于把派生产物绑定到确切源文件。
 - 生成媒体、模型、缓存和私有演示输入均被 Git 忽略。
 
-### 阶段 0：Skill 辅助创作
+### 阶段 0：Prompt-as-Slide 创作
 
 可安装 skill 位于 `skills/oratordeck/`。
 
-每份 `slide-NN_slug.md` 包含：
+在 Prompt-as-Slide (PasS) 协议中，每份 `slide-NN_slug.md` 都是一张 slide 的权威
+定义，其中包含：
 
 - 该页的演示或答辩角色；
 - 观众应得到的结论；

@@ -1,4 +1,4 @@
 interface:
-  display_name: "OratorDeck"
-  short_description: "Create aligned slide images and speaker notes"
-  default_prompt: "Use $oratordeck to turn my per-slide prompts into aligned slide images and synchronized speaker notes."
+  display_name: "OratorDeck PasS"
+  short_description: "Create slides with the Prompt-as-Slide protocol"
+  default_prompt: "Use $oratordeck to create aligned slide images and synchronized speaker notes with the Prompt-as-Slide (PasS) protocol."

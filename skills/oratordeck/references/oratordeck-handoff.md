@@ -19,10 +19,10 @@ resources/
     └── ...
 ```
 
-The prompt files remain the authoritative sources. The OratorDeck skill
-produces and audits all files above. OratorDeck's standalone media workflow
-consumes `SPEAKER_NOTES.md` and `generated-images/`; it does not need the skill
-at runtime.
+The Prompt-as-Slide (PasS) files remain the authoritative sources. The
+OratorDeck skill produces and audits all files above. OratorDeck's standalone
+media workflow consumes `SPEAKER_NOTES.md` and `generated-images/`; it does not
+need the skill at runtime.
 
 ## Boundary
 

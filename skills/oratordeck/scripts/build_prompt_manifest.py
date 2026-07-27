@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build an ordered image-generation manifest from prompt-defined slide sources."""
+"""Build an ordered image-generation manifest from Prompt-as-Slide sources."""
 
 from __future__ import annotations
 
@@ -112,7 +112,7 @@ def build_manifest(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Extract ordered, self-contained image prompts from prompt-defined slide Markdown."
+            "Extract ordered, self-contained image prompts from Prompt-as-Slide Markdown."
         )
     )
     parser.add_argument("prompts_dir", type=Path)

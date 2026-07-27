@@ -1,17 +1,22 @@
-# Prompt-Defined Slide Contract
+# Prompt-as-Slide (PasS) Protocol
 
-Read this reference when creating or substantially revising prompt sources.
+Read this reference when creating or substantially revising PasS sources.
 
-## Source Invariants
+Prompt-as-Slide makes one self-contained Markdown prompt the authoritative
+definition of one slide. The rendered image and synchronized speaker-note
+section are derivatives of that prompt, never independent sources of truth.
+This protocol is provider-neutral and does not require an editable PPTX.
 
-- Keep one authoritative Markdown file per slide.
+## Protocol Invariants
+
+- Keep exactly one authoritative Markdown prompt per slide.
 - Name it `slide-NN_slug.md` with contiguous one-based numbers.
 - Make the prompt self-contained so it can be submitted without another slide.
 - Derive claims, metrics, citations, and boundaries from identified evidence.
 - Put every intended visible string exactly inside straight double quotes.
-- Treat rendered images and speaker notes as derivatives. They may later feed
-  OratorDeck's independent media workflow, but that workflow is not part of
-  skill-assisted authoring.
+- Treat rendered images, visible-text manifests, and speaker notes as
+  derivatives. They may later feed OratorDeck's independent media workflow,
+  but that workflow is not part of PasS authoring.
 
 ## Recommended File Shape
 

@@ -5,7 +5,7 @@ Read this reference before deriving or substantially revising
 
 ## Derivation Procedure
 
-For each slide:
+For each Prompt-as-Slide (PasS) source:
 
 1. Extract the double-quoted visible strings from its fenced prompt.
 2. Identify the visual reading order.
@@ -15,8 +15,8 @@ For each slide:
 6. Assign a target time consistent with the whole-deck duration.
 7. Audit, then listen mentally with bold formatting removed.
 
-Do not draft a generic speech and insert labels afterward. Let the prompt's
-visible vocabulary shape the prose from the beginning.
+Do not draft a generic speech and insert labels afterward. Let the PasS
+prompt's visible vocabulary shape the prose from the beginning.
 
 ## Required Speaker-Note Shape
 

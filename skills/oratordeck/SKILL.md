@@ -1,12 +1,13 @@
 ---
 name: oratordeck
-description: Create the authoring half of an OratorDeck presentation by helping users define self-contained Markdown slide prompts, generating one aligned slide image per prompt with an available image-generation capability, deriving synchronized speaker notes with target durations and bold visual anchors, and auditing the resulting assets. Use when a user wants to design slides from prompts, turn prepared slide prompts into images and speaker notes, keep slide visuals and speech aligned, or revise a prompt-defined presentation. The outputs are ready for OratorDeck's separate media workflow, but this skill does not require or run local TTS, transcription, OCR video rendering, CUDA, or the OratorDeck runtime.
+description: Create slides with the Prompt-as-Slide (PasS) protocol by defining each slide as one authoritative, self-contained Markdown prompt, generating one aligned slide image per prompt with an available image-generation capability, deriving synchronized speaker notes with target durations and bold visual anchors, and auditing the resulting assets. Use when a user mentions Prompt-as-Slide or PasS, wants to design slides from prompts, turn prepared per-slide prompts into images and speaker notes, keep slide visuals and speech aligned, or revise a PasS-based presentation. The outputs are ready for OratorDeck's separate media workflow, but this skill does not require or run local TTS, transcription, OCR video rendering, CUDA, or the OratorDeck runtime.
 ---
 
-# OratorDeck
+# OratorDeck Prompt-as-Slide Authoring
 
-Treat each Markdown slide prompt as source code. Treat slide images, speaker
-notes, and their alignment as derivatives of those prompt sources.
+Use the **Prompt-as-Slide (PasS) protocol**: one self-contained Markdown prompt
+is the authoritative source for exactly one slide. Treat slide images, speaker
+notes, and their alignment as derivatives of those PasS sources.
 
 ## Establish The Workspace And Boundary
 
@@ -15,8 +16,8 @@ OratorDeck checkout, use `resources/` by default. Otherwise, use an existing
 prompt directory or create a clearly named asset directory in the user's
 workspace. Do not require an OratorDeck checkout.
 
-Inspect existing `slide-*.md`, `SPEAKER_NOTES.md`, and `generated-images/`
-before changing files. Preserve unrelated user materials.
+Inspect existing PasS sources matching `slide-*.md`, `SPEAKER_NOTES.md`, and
+`generated-images/` before changing files. Preserve unrelated user materials.
 
 Use any available Python 3 launcher for bundled deterministic scripts:
 `python`, `python3`, or `py -3`. Replace `python` in examples as appropriate.
@@ -51,7 +52,7 @@ boundary.
 
 ## Select The Requested Scope
 
-- **Design only:** create or revise prompt sources and audit them.
+- **Design only:** create or revise PasS prompt sources and audit them.
 - **Generate assets:** create slide images and synchronized speaker notes from
   existing prompts, then audit both.
 - **Revise:** edit authoritative prompts first, then regenerate every affected
@@ -60,7 +61,7 @@ boundary.
 Continue through the authoring phases implied by the request. Do not install or
 run the media pipeline as part of this skill.
 
-## Phase 1: Establish The Deck Contract
+## Phase 1: Establish The PasS Deck Contract
 
 Resolve the audience, purpose, language, target duration, approximate slide
 count, visual character, evidence sources, and required claims. Infer
@@ -71,16 +72,16 @@ Build a one-line argumentative role and one audience takeaway for every slide
 before expanding image instructions. Ensure the ordered slide roles form one
 coherent argument rather than a list of topics.
 
-Read [prompt-contract.md](references/prompt-contract.md) before creating or
-substantially restructuring prompt files.
+Read the [Prompt-as-Slide protocol](references/prompt-contract.md) before
+creating or substantially restructuring prompt files.
 
-## Phase 2: Author Prompt Sources
+## Phase 2: Author PasS Sources
 
 Create one `ASSET_DIR/slide-NN_slug.md` file per slide, with contiguous
 one-based numbers and stable descriptive slugs. Use the same stem later for
 the image.
 
-For every prompt:
+For every PasS prompt:
 
 1. State its presentation role and audience takeaway.
 2. Include one self-contained fenced image-generation prompt.
@@ -144,8 +145,8 @@ python "SKILL_DIR/scripts/audit_slide_assets.py" --prompts-dir "ASSET_DIR" --ima
 ## Phase 4: Derive Synchronized Speaker Notes
 
 Read [speaker-note-patterns.md](references/speaker-note-patterns.md). Generate
-`ASSET_DIR/SPEAKER_NOTES.md` from the ordered prompt sources, not from memory
-and not only from the rendered images.
+`ASSET_DIR/SPEAKER_NOTES.md` from the ordered PasS sources, not from memory and
+not only from the rendered images.
 
 For each slide:
 
@@ -173,7 +174,7 @@ must remain coherent and confident.
 
 Verify:
 
-- prompt, note-section, and image counts agree;
+- PasS source, note-section, and image counts agree;
 - numbering is contiguous and filenames use matching stems;
 - every generated image has been inspected at original detail;
 - visible labels, numbers, formulas, and citations match the prompt manifest;
@@ -182,7 +183,7 @@ Verify:
 - the notes remain natural when bold formatting is removed;
 - the final audit has no hidden errors or unreviewed warnings.
 
-Report the asset directory, prompt count, image count, note-section count,
+Report the asset directory, PasS source count, image count, note-section count,
 target duration, audit result, and any remaining review items. Do not produce
 `SPEAKER_NOTES_TTS.txt`, audio, subtitles, or video as skill outputs.
 
@@ -191,5 +192,6 @@ target duration, audit result, and any remaining review items. Do not produce
 Keep private presentation sources and generated media out of commits unless
 the user explicitly wants them published. Never rewrite evidence solely to
 improve visual symmetry, timing, or anchor density. Revise the authoritative
-prompt before regenerating a changed slide or its narration. When downstream
-media already exists, identify it as stale after an upstream asset changes.
+PasS prompt before regenerating a changed slide or its narration. When
+downstream media already exists, identify it as stale after an upstream asset
+changes.

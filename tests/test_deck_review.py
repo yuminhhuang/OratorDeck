@@ -250,6 +250,10 @@ def test_default_workflow_offers_verdict_without_blocking_tts() -> None:
     assert "Saving in the concurrently open editor" in workflow
     assert "while media generation continues" in workflow
     assert "interrupt and rerun" in workflow
+    early_pre_rerun_index = workflow.index(
+        "Pre-TTS Save requires a complete new run"
+    )
+    assert editor_index < early_pre_rerun_index < tts_index
     assert '--post-html "$post_tts_verdict_file"' in workflow
     assert '--post-state "$post_tts_review_file" &' in workflow
     assert '--pre-verdict-html "$deck_verdict_file"' in workflow
@@ -267,6 +271,21 @@ def test_default_workflow_offers_verdict_without_blocking_tts() -> None:
     assert '--ocr-results "$input_dir/deck-ocr.json"' in workflow
     assert "-m oratordeck_verdict edit" in workflow
     assert 'echo "Video: $video_dir/$run_name.mp4"' in workflow
+    next_steps_index = workflow.index(
+        "DECK VERDICT — NEXT STEPS AFTER SAVE"
+    )
+    assert next_steps_index > post_output_index
+    assert "PRE-TTS · Save deck review" in workflow[next_steps_index:]
+    assert "POST-TTS · Save box overrides" in workflow[next_steps_index:]
+    assert (
+        "$repo_dir/scripts/generate-keynote-workflow.sh"
+        in workflow[next_steps_index:]
+    )
+    next_steps = workflow[next_steps_index:]
+    assert "--rerender-from-report" in next_steps
+    assert "$video_dir/anchor-video-report.json" in next_steps
+    assert "--anchor-overrides" in next_steps
+    assert "$post_tts_review_file" in next_steps
 
 
 def test_default_workflow_keeps_the_complete_generation_contract() -> None:
